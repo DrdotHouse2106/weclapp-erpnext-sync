@@ -13,7 +13,7 @@ _TAX_FIELD_MAP = {
 	"defaultDiscountAccountNumber": "discount_account",
 }
 
-_PURCHASE_TAX_TYPES = {"INPUT_VAT", "INPUT_VAT_REVERSED", "IMPORT_VAT"}
+_PURCHASE_TAX_TYPES = {"INPUT_VAT", "INPUT_VAT_REVERSED", "IMPORT_VAT", "IMPORT_SALES_TAX"}
 
 
 def _is_purchase_tax(t: dict) -> bool:
