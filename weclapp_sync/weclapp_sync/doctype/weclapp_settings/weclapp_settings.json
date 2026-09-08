@@ -56,6 +56,7 @@
   "column_break_tax",
   "default_sales_taxes_template",
   "default_purchase_taxes_template",
+  "create_missing_tax_accounts",
   "populate_tax_mappings",
   "tax_mappings"
  ],
@@ -367,6 +368,11 @@
    "fieldtype": "Link",
    "label": "Einkaufssteuer-Vorlage",
    "options": "Purchase Taxes and Charges Template"
+  },
+  {
+   "fieldname": "create_missing_tax_accounts",
+   "fieldtype": "Button",
+   "label": "Fehlende Steuerkonten anlegen (SKR03)"
   },
   {
    "fieldname": "populate_tax_mappings",

@@ -30,6 +30,23 @@ frappe.ui.form.on("WeClapp Settings", {
 		});
 	},
 
+	create_missing_tax_accounts(frm) {
+		frappe.confirm(
+			__("Fehlende, von WeClapp-Steuern referenzierte SKR03-Konten im Kontenplan anlegen?"),
+			() => {
+				frm.call({
+					doc: frm.doc,
+					method: "create_missing_tax_accounts",
+					freeze: true,
+					freeze_message: __("Lege Konten an …"),
+				}).then((r) => {
+					frm.reload_doc();
+					frappe.msgprint({ title: __("Steuerkonten"), message: (r.message || "").replace(/\n/g, "<br>"), indicator: "green" });
+				});
+			}
+		);
+	},
+
 	populate_tax_mappings(frm) {
 		frm.call({
 			doc: frm.doc,
@@ -38,7 +55,7 @@ frappe.ui.form.on("WeClapp Settings", {
 			freeze_message: __("Hole WeClapp-Steuern …"),
 		}).then((r) => {
 			frm.reload_doc();
-			frappe.show_alert({ message: r.message, indicator: "green" });
+			frappe.msgprint({ title: __("Steuer-Mapping"), message: (r.message || "").replace(/\n/g, "<br>"), indicator: "blue" });
 		});
 	},
 
