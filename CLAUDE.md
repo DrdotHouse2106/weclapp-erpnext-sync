@@ -1,7 +1,59 @@
 # CLAUDE.md
 
-Projektinterne Referenz - **noch kein Code, nur Scaffold + Plan.** Diese Datei nach jeder Session
-mit neuen Erkenntnissen aktualisieren (Konvention aus dem Ursprungsprojekt, siehe unten).
+Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
+(Konvention aus dem Ursprungsprojekt, siehe unten).
+
+## Stand der Umsetzung (2026-09-08)
+
+**Increment 1 fertig: App-Gerüst + Unterbau. Noch keine Feld-Mapper -> es wird real noch nichts
+synchronisiert, weil die Registry 0 Objekttypen kennt.**
+
+Fertig:
+- Frappe-App `weclapp_sync/`: `pyproject.toml`, `hooks.py` (Scheduler-Cron + `after_install`),
+  `modules.txt`, `install.py`, `config/desktop.py`.
+- `weclapp_sync/weclapp/` - read-only WeClapp-Client. `client.py`: GET-only per `_request()` hart
+  erzwungen (nicht-GET -> `WeClappWriteRefused`), `iter_pages()`/`iter_all()` sind **Generatoren**
+  (Seite holen -> yield -> nächste Seite; nie die ganze Entität im RAM), `count()` mit Filter,
+  `modified_since_filter()` baut `{"lastModifiedDate-gt": epoch_ms}`, `iter_document_content()`
+  streamt PDF-Downloads chunkweise. `doctypes.py`: `WeClappDocType`-Enum (Teilmenge).
+- Doctypes unter `weclapp_sync/weclapp_sync/doctype/`:
+  - **WeClapp Settings** (Single): Zugang (URL/Token/page_size), Delta-Sync-Schalter+Intervall,
+    Objekttyp-Child-Tabelle, Buttons "Verbindung testen" / "Objekttyp-Liste aktualisieren" /
+    "Vollimport starten". Controller füllt die Objekttyp-Zeilen aus `registry.SYNC_ORDER`.
+    Mapping-Standardwerte (config_example.py-Port) = leerer Abschnitt, TODO.
+  - **WeClapp Sync Object Type** (Child): pro Typ `enabled`, `last_sync_ms` (Delta-Watermark),
+    `last_sync_at`, `progress_run`/`progress_page` (Resume-Cursor).
+  - **WeClapp Sync Run** (+ Child **WeClapp Sync Run Type**): ein Doc pro Voll-/Delta-Lauf,
+    Status + Summen + Pro-Typ-Ergebnis.
+  - **WeClapp Sync Log**: ein Doc pro fehlgeschlagenem Datensatz (Run, Typ, WeClapp-ID,
+    Referenz, Traceback) - kein stiller Fehlschlag.
+- `weclapp_sync/sync/`:
+  - `registry.py` - `ObjectTypeSpec` + `SYNC_ORDER` (feste Reihenfolge aus `reference/main.py`)
+    + `register()`. **Noch `register(...)`-Aufrufe = 0** - hier wandern die Mapper rein.
+  - `engine.py` - gemeinsamer Unterbau: `run_full_import()` / `run_delta_sync()` ->
+    `run_sync(mode)` -> pro Spec `sync_object_type()`. Seitenweise iterieren, `commit()` +
+    `progress_page` speichern pro Seite, Savepoint pro Datensatz (ein Fehler rollt nur SEINEN
+    Datensatz zurück, Seite läuft weiter), Delta-Watermark erst bei Typ-Erfolg setzen.
+  - `scheduler.py` - Cron-Tick (jede Minute) `enqueue_due_delta_sync()`: prüft Fälligkeit,
+    enqueued **einen** Long-Job, synct nicht selbst. `recover_stale_runs()` stündlich.
+  - `settings.py` - `get_client()` (baut Client aus Settings), `get_object_type_row()`.
+  - `mappers/base.py` - `Mapper`-Basisklasse mit `upsert()` (deterministischer Name ->
+    get_doc+save / new_doc+insert), `to_doc_fields()`/`target_name()` von Unterklassen zu füllen,
+    `post_run()` für Belegketten-Nachlauf.
+
+Als Nächstes (Reihenfolge):
+1. Custom Fields (`wc_id` etc. auf Customer/Item/Sales Invoice/...) als Fixtures + Port des
+   Custom-Field-Teils aus `reference/setup.py`.
+2. Ersten Mapper: **Kunden** (`reference/migration_logic/full_field_mapping/customer_migration.py`
+   -> `weclapp_sync/sync/mappers/customer.py`, REST-Aufrufe -> `frappe.get_doc`), dann
+   `register(ObjectTypeSpec(key="customer", ...))` in `registry.py`.
+3. `reference/erpnext/en_helper.py` portieren (Namens-/Territory-/UOM-/Datums-Helfer), dabei
+   `config.*` -> Felder aus WeClapp Settings.
+4. Weitere Mapper in `SYNC_ORDER`-Reihenfolge.
+5. `setup_*()`-Äquivalente (Stammdaten/Struktur) als Vorlauf von `run_full_import()`.
+6. Mapping-Standardwert-Felder ins Settings-Formular (aus `reference/config_example.py`).
+
+Offene Design-Punkte, die beim Mapper-Bau zu klären sind: siehe "Offene technische Fragen".
 
 ## Was das hier werden soll
 
@@ -78,12 +130,18 @@ direkt lauffähig hier**, dient als vollständige Ausgangsbasis für den Umbau z
      für `lastModifiedDate >= letzter_sync_zeitpunkt` (siehe Punkt 4).
    - Beide Modi nutzen dieselbe Upsert-Funktion pro Objekttyp (Punkt 5) - kein doppelt gepflegter
      Code für "einmal alles" vs. "nur Neues".
-4. **Delta-Filter:** WeClapp-Entitäten haben `lastModifiedDate`/`version`-Felder (live im Cache
-   des Vorgängerprojekts bestätigt) - `wc_api.py`s `get_all()` muss um Filter-Unterstützung
-   erweitert werden (WeClapps API unterstützt Query-Filter, siehe die vom Nutzer geteilte
-   Endpunkt-Liste). **Noch nicht live gegen die echte WeClapp-API getestet, ob
-   `lastModifiedDate`-Filterung serverseitig funktioniert** - das ist der wichtigste offene
-   technische Punkt vor dem Bau, siehe unten.
+   - **Streaming/seitenweise verarbeiten, nicht erst alles cachen.** Das Vorgängerprojekt hat
+     jeden Objekttyp komplett nach `weclapp/cache/*.json` geladen und _danach_ verarbeitet - das
+     geht hier NICHT: eine Frappe-Instanz hat wenig RAM/Disk, und der Erstimport ist eine große
+     Datenmenge (5-6k Rechnungen, 6k Kunden, 6k Artikel, ...). Stattdessen pro Objekttyp Seite
+     für Seite von WeClapp holen (`page`/`pageSize`), jede Seite sofort upserten, dann verwerfen.
+     Nie die volle Liste eines Objekttyps im Speicher halten. Gilt für Vollimport UND Delta.
+     `wc_api.py` braucht dafür einen Generator/Iterator statt `get_all()` (das die Seiten
+     zusammen in eine Liste merged).
+4. **Delta-Filter:** ~~Noch nicht live getestet~~ **GEKLÄRT 2026-09-07 (siehe unten):** WeClapps
+   API filtert serverseitig nach `lastModifiedDate` (Query-Param `lastModifiedDate-gt=<epoch_ms>`,
+   auf `/count` und Listen-Endpoint). `wc_api.py`s Seiten-Abruf muss den Filter als optionalen
+   `params` durchreichen.
 5. **Upsert-Semantik pro Objekttyp**, aufbauend auf den deterministischen Namen aus
    `en_helper.py` - existiert das Ziel-Dokument schon (Name bekannt), `frappe.get_doc(...).save()`
    mit aktualisierten Feldern, sonst `frappe.new_doc(...).insert()`. Idempotenz-Prinzip aus dem
@@ -95,11 +153,22 @@ direkt lauffähig hier**, dient als vollständige Ausgangsbasis für den Umbau z
 
 ## Offene technische Fragen (vor dem Bau zu klären)
 
-- **Wichtigste:** Unterstützt WeClapps REST-API serverseitige Filterung nach `lastModifiedDate`
-  (Query-Parameter, analog zu ERPNexts `filters`)? Noch nicht live getestet, nur die Datenfelder
-  selbst sind bestätigt vorhanden. Falls nicht möglich: Delta-Erkennung müsste clientseitig über
-  einen Vollabruf + Vergleich laufen, was den ganzen Ansatz deutlich weniger effizient macht -
-  vor größerem Implementierungsaufwand klären.
+- ~~**Wichtigste:** Unterstützt WeClapps REST-API serverseitige Filterung nach
+  `lastModifiedDate`?~~ **GEKLÄRT 2026-09-07, live gegen francetec.weclapp.com getestet (nur
+  GET): JA, funktioniert vollständig.**
+  - Syntax: Query-Param `<feld>-<op>=<wert>`, Operatoren `-gt -lt -ge -le -eq -ne` (dieselbe
+    Suffix-Syntax wie `search()` in `reference/weclapp/wc_api.py` mit `-eq`).
+  - **Wert MUSS Epoch-Millisekunden sein** (`lastModifiedDate` liegt so im Datensatz vor). Ein
+    ISO-8601-String führt zu HTTP 500.
+  - Greift auf `/count` UND dem Listen-Endpoint, für alle getesteten Objekttypen (`customer`,
+    `party`, `salesOrder`, `salesInvoice`, `article`, `quotation`).
+  - Kombinierbar (`-gt` und `-lt` in einer Query), zusätzlich `sort=-lastModifiedDate` und
+    `properties=id,invoiceNumber,...` (Feldreduktion) nutzbar.
+  - Exakt: `count(-gt X)` + `count(-lt X)` = `count()` ohne Filter, auf den Datensatz genau.
+  - Konsequenz: `wc_api.py`s `get_all()`/`_get_page()`/`get_count()` müssen einen optionalen
+    `params`-/Filter-Parameter durchreichen; kein clientseitiger Vollabruf+Vergleich nötig.
+  - Read-only Probe-Skript im Repo: `scripts/weclapp_filter_probe.py` (Token via
+    `WECLAPP_BASE_URL`/`WECLAPP_API_TOKEN`-Env, jeder Aufruf ein GET).
 - Reihenfolge/Abhängigkeiten beim Delta-Sync: die ursprüngliche Migration hatte eine feste
   Reihenfolge (Kunden vor Rechnungen vor Zahlungen, wegen Fremdschlüsseln, siehe
   `reference/main.py`) - bei einem Delta-Sync mit potenziell nur einzelnen geänderten Rechnungen

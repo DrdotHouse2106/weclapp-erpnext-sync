@@ -1,0 +1,113 @@
+{
+ "actions": [],
+ "autoname": "format:WC-SYNC-{#####}",
+ "creation": "2026-09-08 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "mode",
+  "status",
+  "column_break_1",
+  "started_at",
+  "finished_at",
+  "section_totals",
+  "records_processed",
+  "records_failed",
+  "section_types",
+  "type_results"
+ ],
+ "fields": [
+  {
+   "fieldname": "mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Mode",
+   "options": "Full Import\nDelta Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Running\nCompleted\nCompleted with errors\nAborted (stale)\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "finished_at",
+   "fieldtype": "Datetime",
+   "label": "Finished At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break",
+   "label": "Summe"
+  },
+  {
+   "fieldname": "records_processed",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Records Processed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "records_failed",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Records Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_types",
+   "fieldtype": "Section Break",
+   "label": "Pro Objekttyp"
+  },
+  {
+   "fieldname": "type_results",
+   "fieldtype": "Table",
+   "label": "Type Results",
+   "options": "WeClapp Sync Run Type",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WeClapp Sync",
+ "name": "WeClapp Sync Run",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "mode"
+}

@@ -1,0 +1,43 @@
+[project]
+name = "weclapp_sync"
+description = "WeClapp → ERPNext live sync (full import + scheduled delta sync)"
+authors = [
+    { name = "Marcel Ulber", email = "drdothouse@gmail.com" },
+]
+requires-python = ">=3.10,<3.15"
+readme = "README.md"
+dynamic = ["version"]
+
+dependencies = [
+    # requests kommt über Frappe bereits mit; hier explizit, weil der WeClapp-Client
+    # es direkt importiert.
+    "requests>=2.28",
+]
+
+[project.urls]
+Repository = "https://github.com/DrdotHouse2106/weclapp-erpnext-sync.git"
+"Bug Reports" = "https://github.com/DrdotHouse2106/weclapp-erpnext-sync/issues"
+
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<17.0.0"
+erpnext = ">=15.0.0,<17.0.0"
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "RUF"]
+ignore = [
+    "E501",   # line too long
+    "F401",   # "unused" imports (Frappe-Pattern: re-export in __init__)
+    "B904",   # raise inside except without from
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "tab"

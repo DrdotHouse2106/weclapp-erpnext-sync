@@ -1,0 +1,185 @@
+{
+ "actions": [],
+ "creation": "2026-09-08 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_connection",
+  "weclapp_base_url",
+  "weclapp_api_token",
+  "page_size",
+  "column_break_conn",
+  "test_connection",
+  "connection_result",
+  "section_delta",
+  "enable_scheduled_delta",
+  "delta_interval_minutes",
+  "column_break_delta",
+  "delta_job_timeout",
+  "section_object_types",
+  "object_types_help",
+  "refresh_object_types",
+  "object_types",
+  "section_full_import",
+  "full_import_help",
+  "run_full_import",
+  "section_mapping_defaults",
+  "mapping_defaults_help"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Globaler Schalter. Ist er aus, läuft weder Delta-Sync noch Vollimport.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "WeClapp Sync aktiv"
+  },
+  {
+   "fieldname": "section_connection",
+   "fieldtype": "Section Break",
+   "label": "WeClapp-Zugang (nur lesend)"
+  },
+  {
+   "description": "z.B. https://IHR-TENANT.weclapp.com/webapp/api/v1/ (mit abschließendem /)",
+   "fieldname": "weclapp_base_url",
+   "fieldtype": "Data",
+   "label": "WeClapp API Base URL",
+   "mandatory_depends_on": "enabled",
+   "options": "URL"
+  },
+  {
+   "description": "WeClapp API-Token. Wird verschlüsselt gespeichert. Der Sync greift ausschließlich lesend (GET) auf WeClapp zu.",
+   "fieldname": "weclapp_api_token",
+   "fieldtype": "Password",
+   "label": "WeClapp API Token",
+   "mandatory_depends_on": "enabled"
+  },
+  {
+   "default": "100",
+   "description": "Datensätze pro WeClapp-Seitenabruf. Wird seitenweise verarbeitet und verworfen - höher = weniger HTTP-Requests, mehr RAM pro Seite.",
+   "fieldname": "page_size",
+   "fieldtype": "Int",
+   "label": "Seitengröße"
+  },
+  {
+   "fieldname": "column_break_conn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "weclapp_base_url",
+   "fieldname": "test_connection",
+   "fieldtype": "Button",
+   "label": "Verbindung testen"
+  },
+  {
+   "fieldname": "connection_result",
+   "fieldtype": "Small Text",
+   "label": "Testergebnis",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_delta",
+   "fieldtype": "Section Break",
+   "label": "Delta-Sync (automatisch)"
+  },
+  {
+   "default": "0",
+   "description": "Wenn aktiv, prüft der Scheduler jede Minute, ob ein Delta-Sync fällig ist, und startet ihn als Background-Job. Nur geänderte WeClapp-Datensätze (lastModifiedDate) werden geholt.",
+   "fieldname": "enable_scheduled_delta",
+   "fieldtype": "Check",
+   "label": "Automatischen Delta-Sync aktivieren"
+  },
+  {
+   "default": "15",
+   "depends_on": "enable_scheduled_delta",
+   "fieldname": "delta_interval_minutes",
+   "fieldtype": "Int",
+   "label": "Intervall (Minuten)"
+  },
+  {
+   "fieldname": "column_break_delta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "3600",
+   "depends_on": "enable_scheduled_delta",
+   "description": "Timeout des Delta-Sync-Background-Jobs in Sekunden.",
+   "fieldname": "delta_job_timeout",
+   "fieldtype": "Int",
+   "label": "Job-Timeout (Sekunden)"
+  },
+  {
+   "fieldname": "section_object_types",
+   "fieldtype": "Section Break",
+   "label": "Objekttypen"
+  },
+  {
+   "fieldname": "object_types_help",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted\">Pro WeClapp-Objekttyp festlegen, ob er gesynct wird. Die Reihenfolge ist fest (Fremdschlüssel-Abhängigkeiten) und wird sowohl beim Vollimport als auch beim Delta-Sync eingehalten. Typen ohne lauffähigen Mapper werden übersprungen und im Sync-Log vermerkt.</p>"
+  },
+  {
+   "fieldname": "refresh_object_types",
+   "fieldtype": "Button",
+   "label": "Objekttyp-Liste aktualisieren"
+  },
+  {
+   "fieldname": "object_types",
+   "fieldtype": "Table",
+   "label": "Objekttypen",
+   "options": "WeClapp Sync Object Type"
+  },
+  {
+   "fieldname": "section_full_import",
+   "fieldtype": "Section Break",
+   "label": "Vollimport (manuell)"
+  },
+  {
+   "fieldname": "full_import_help",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted\">Startet einen vollständigen Import aller aktivierten Objekttypen ohne Delta-Filter, als langlaufenden Background-Job. Idempotent – bereits vorhandene ERPNext-Datensätze werden aktualisiert, nicht doppelt angelegt. Für Erstinstallation oder nach einem ERPNext-Reset.</p>"
+  },
+  {
+   "depends_on": "enabled",
+   "fieldname": "run_full_import",
+   "fieldtype": "Button",
+   "label": "Vollimport jetzt starten"
+  },
+  {
+   "fieldname": "section_mapping_defaults",
+   "fieldtype": "Section Break",
+   "label": "Mapping-Standardwerte"
+  },
+  {
+   "fieldname": "mapping_defaults_help",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted\">Noch nicht implementiert. Hier kommen die Konten-/Gruppen-/Territory-/UOM-Standardwerte hin, die bisher als Konstanten in <code>reference/config_example.py</code> lagen – sie werden mit den Objekttyp-Mappern nachgezogen.</p>"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WeClapp Sync",
+ "name": "WeClapp Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
