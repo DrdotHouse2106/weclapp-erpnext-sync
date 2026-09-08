@@ -17,6 +17,8 @@ Noch NICHT portiert (jeweils eigener Folge-Schritt, siehe CLAUDE.md):
 
 from __future__ import annotations
 
+import traceback
+from collections.abc import Callable
 from typing import Any
 
 import frappe
@@ -27,6 +29,22 @@ from weclapp_sync.sync.mappers.base import Mapper
 from weclapp_sync.sync.settings import get_settings
 
 _PARTY_DOCTYPE = "Customer"
+
+
+def _guarded(child_doctype: str, party_name: str, wc_obj: dict, fn: Callable[[], Any]) -> Any:
+	"""Führt eine Sub-Entitäts-Upsert-Funktion in einem eigenen Savepoint aus. Bei Fehler:
+	Rollback nur dieses Teils + Log, Rückgabe None - der Kunde selbst bleibt erhalten."""
+	sp = f"wcsub_{abs(hash((child_doctype, str(wc_obj.get('id')))))}"
+	frappe.db.savepoint(sp)
+	try:
+		return fn()
+	except Exception:
+		frappe.db.rollback(save_point=sp)
+		frappe.log_error(
+			title=f"WeClapp Sync: {child_doctype} für {party_name} fehlgeschlagen",
+			message=f"WeClapp {child_doctype} id={wc_obj.get('id')}\n\n{traceback.format_exc()}",
+		)
+		return None
 
 
 class CustomerMapper(Mapper):
@@ -53,11 +71,13 @@ class CustomerMapper(Mapper):
 			or None,
 			"website": record.get("website") or None,
 			"tax_id": record.get("vatRegistrationNumber") or None,
-			"default_currency": record.get("currencyName") or None,
+			"default_currency": h.link_or_none("Currency", record.get("currencyName")),
 			"disabled": 0,
 			"is_frozen": 0,
 			"customer_details": h.join_notes(record.get("description")) or None,
-			"payment_terms": (record.get("termOfPaymentName") or "").strip() or None,
+			# Payment Terms Template muss existieren (setup_payment_terms-Äquivalent noch TODO) -
+			# fehlt es, Feld leer lassen statt den Kunden scheitern zu lassen.
+			"payment_terms": h.link_or_none("Payment Terms Template", record.get("termOfPaymentName")),
 			"wc_zahlungsart": record.get("paymentMethodName") or None,
 			"wc_opt_in_email": 1 if record.get("optIn") else 0,
 			"wc_opt_in_letter": 1 if record.get("optInLetter") else 0,
@@ -82,20 +102,21 @@ class CustomerMapper(Mapper):
 		primary_contact = None
 		first_contact = None
 
-		# 2) Adressen
+		# 2) Adressen - ein Fehler bei einer Adresse darf den Kunden nicht scheitern lassen
+		#    (eigener Savepoint, damit ein Teil-Write sauber zurückgerollt wird).
 		for wc_addr in record.get("addresses") or []:
-			res = pc.upsert_address(
-				wc_addr, party_doctype=_PARTY_DOCTYPE, party_name=name, party_number=number
-			)
+			res = _guarded("Address", name, wc_addr, lambda a=wc_addr: pc.upsert_address(
+				a, party_doctype=_PARTY_DOCTYPE, party_name=name, party_number=number
+			))
 			if res and res["is_primary"]:
 				primary_address = res
 
 		# 3) Kontakte
 		for wc_contact in record.get("contacts") or []:
 			is_primary = record.get("primaryContactId") == wc_contact.get("id")
-			res = pc.upsert_contact(
-				wc_contact, party_doctype=_PARTY_DOCTYPE, party_name=name, is_primary=is_primary
-			)
+			res = _guarded("Contact", name, wc_contact, lambda c=wc_contact, p=is_primary: pc.upsert_contact(
+				c, party_doctype=_PARTY_DOCTYPE, party_name=name, is_primary=p
+			))
 			if not res:
 				continue
 			first_contact = first_contact or res
@@ -110,13 +131,13 @@ class CustomerMapper(Mapper):
 		if primary_contact is None:
 			self_data = pc.build_self_contact(record, display_name, is_company)
 			if self_data:
-				primary_contact = pc.upsert_contact(
+				primary_contact = _guarded("Contact", name, self_data, lambda: pc.upsert_contact(
 					self_data,
 					party_doctype=_PARTY_DOCTYPE,
 					party_name=name,
 					is_primary=True,
 					name_suffix=number,
-				)
+				))
 
 		# 5) Primär-Verknüpfungen + Territory aus Primäradresse
 		updates: dict[str, Any] = {}

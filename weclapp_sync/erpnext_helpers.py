@@ -106,8 +106,7 @@ def country_name(country_code: str | None) -> str | None:
 	"""WeClapp countryCode (ISO 3166-1 alpha-2) -> ERPNext-Country-Name."""
 	if not country_code:
 		return None
-	name = frappe.db.get_value("Country", {"code": country_code.strip().lower()}, "name")
-	return name or country_code
+	return frappe.db.get_value("Country", {"code": country_code.strip().lower()}, "name")
 
 
 def default_uom() -> str:
@@ -116,3 +115,13 @@ def default_uom() -> str:
 
 def default_currency() -> str:
 	return _settings().default_currency or "EUR"
+
+
+def link_or_none(doctype: str, value: str | None) -> str | None:
+	"""Gibt `value` zurück, wenn ein Dokument dieses Namens existiert, sonst None.
+	Verhindert LinkValidationError bei noch nicht angelegten Stammdaten (z.B. Payment Terms
+	Template) - ein fehlendes Nebenfeld soll den Datensatz nicht blockieren."""
+	if not value:
+		return None
+	value = value.strip()
+	return value if frappe.db.exists(doctype, value) else None
