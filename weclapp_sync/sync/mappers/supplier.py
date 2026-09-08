@@ -16,6 +16,7 @@ from typing import Any
 import frappe
 
 from weclapp_sync import erpnext_helpers as h
+from weclapp_sync.sync.mappers import _custom_attributes as ca
 from weclapp_sync.sync.mappers import _party_common as pc
 from weclapp_sync.sync.mappers.base import Mapper
 from weclapp_sync.sync.settings import get_settings
@@ -41,6 +42,7 @@ class SupplierMapper(Mapper):
 	target_doctype = "Supplier"
 
 	def __init__(self) -> None:
+		super().__init__()
 		self._party_cache: tuple[str, dict] | None = None
 
 	def should_skip(self, record: dict) -> bool:
@@ -66,7 +68,7 @@ class SupplierMapper(Mapper):
 		settings = get_settings()
 		party = self._party(record)
 		is_company = record.get("partyType") != "PERSON"
-		return {
+		fields = {
 			"supplier_name": pc.display_name(record),
 			"supplier_type": "Company" if is_company else "Individual",
 			"supplier_group": settings.default_supplier_group or None,
@@ -84,6 +86,8 @@ class SupplierMapper(Mapper):
 			"payment_terms": h.link_or_none("Payment Terms Template", record.get("termOfPaymentName")),
 			"wc_zahlungsart": record.get("paymentMethodName") or None,
 		}
+		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
+		return fields
 
 	def upsert(self, record: dict) -> str | None:
 		if self.should_skip(record):

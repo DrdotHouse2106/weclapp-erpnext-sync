@@ -28,6 +28,24 @@ class Mapper:
 	# Zusatzdaten braucht (z.B. das party-Objekt für Personenkonten).
 	client = None
 
+	def __init__(self) -> None:
+		self._ca_definitions: dict | None = None
+
+	# --------------------------------------------------------------- Zusatzfelder (customAttributes)
+	def custom_attribute_definitions(self) -> dict:
+		"""WeClapp customAttributeDefinition, keyed by id. Einmal pro Mapper-Lauf geladen
+		(~99 Einträge, klein). Leeres dict, wenn kein Client."""
+		if self._ca_definitions is None:
+			self._ca_definitions = {}
+			if self.client is not None:
+				try:
+					self._ca_definitions = {
+						d["id"]: d for d in self.client.iter_all("customAttributeDefinition")
+					}
+				except Exception:
+					self._ca_definitions = {}
+		return self._ca_definitions
+
 	# True, wenn für target_doctype autoname="Prompt" gesetzt ist (siehe
 	# weclapp_sync/setup/naming.py) und target_name() als Dokument-ID verwendet werden soll.
 	forces_name: bool = True

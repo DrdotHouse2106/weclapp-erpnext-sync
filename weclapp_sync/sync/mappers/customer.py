@@ -35,6 +35,7 @@ from typing import Any
 import frappe
 
 from weclapp_sync import erpnext_helpers as h
+from weclapp_sync.sync.mappers import _custom_attributes as ca
 from weclapp_sync.sync.mappers import _party_common as pc
 from weclapp_sync.sync.mappers.base import Mapper
 from weclapp_sync.sync.settings import get_settings
@@ -62,6 +63,7 @@ class CustomerMapper(Mapper):
 	target_doctype = "Customer"
 
 	def __init__(self) -> None:
+		super().__init__()
 		self._party_cache: tuple[str, dict] | None = None
 
 	# ------------------------------------------------------------------ Basis
@@ -90,7 +92,7 @@ class CustomerMapper(Mapper):
 		settings = get_settings()
 		party = self._party(record)
 		is_company = record.get("partyType") != "PERSON"
-		return {
+		fields = {
 			"customer_name": _display_name(record),
 			"customer_type": "Company" if is_company else "Individual",
 			"customer_group": (
@@ -124,6 +126,8 @@ class CustomerMapper(Mapper):
 			"wc_opt_in_phone": 1 if record.get("optInPhone") else 0,
 			"wc_opt_in_sms": 1 if record.get("optInSms") else 0,
 		}
+		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
+		return fields
 
 	# ------------------------------------------------------------------ voller Graph
 	def upsert(self, record: dict) -> str | None:
