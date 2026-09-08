@@ -24,6 +24,10 @@ class Mapper:
 	# Von Unterklassen zu setzen:
 	target_doctype: str = ""
 
+	# Vom Engine vor dem Lauf gesetzt: der read-only WeClapp-Client, falls ein Mapper
+	# Zusatzdaten braucht (z.B. das party-Objekt für Personenkonten).
+	client = None
+
 	# True, wenn für target_doctype autoname="Prompt" gesetzt ist (siehe
 	# weclapp_sync/setup/naming.py) und target_name() als Dokument-ID verwendet werden soll.
 	forces_name: bool = True

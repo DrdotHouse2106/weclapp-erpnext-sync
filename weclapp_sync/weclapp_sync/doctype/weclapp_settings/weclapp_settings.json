@@ -36,7 +36,10 @@
   "column_break_mapping",
   "default_territory",
   "default_territory_germany",
-  "default_uom"
+  "default_uom",
+  "section_accounts",
+  "debtor_parent_account",
+  "creditor_parent_account"
  ],
  "fields": [
   {
@@ -231,6 +234,25 @@
    "fieldtype": "Link",
    "label": "Standard-Mengeneinheit",
    "options": "UOM"
+  },
+  {
+   "fieldname": "section_accounts",
+   "fieldtype": "Section Break",
+   "label": "Personenkonten"
+  },
+  {
+   "description": "Übergeordnetes Konto (Gruppe), unter dem individuelle Debitoren-/Personenkonten je Kunde angelegt werden (SKR03: „… mit Kontokorrent“). Leer = keine Personenkonten, Kunden nutzen das Sammelkonto.",
+   "fieldname": "debtor_parent_account",
+   "fieldtype": "Link",
+   "label": "Debitoren-Sammelgruppe",
+   "options": "Account"
+  },
+  {
+   "description": "Übergeordnetes Konto (Gruppe) für individuelle Kreditoren-/Personenkonten je Lieferant.",
+   "fieldname": "creditor_parent_account",
+   "fieldtype": "Link",
+   "label": "Kreditoren-Sammelgruppe",
+   "options": "Account"
   }
  ],
  "index_web_pages_for_search": 1,

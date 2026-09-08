@@ -72,10 +72,24 @@ Fertig:
     get_doc+save / new_doc+insert), `to_doc_fields()`/`target_name()` von Unterklassen zu füllen,
     `post_run()` für Belegketten-Nachlauf.
 
+### Increment 3 (2026-09-08): Kunden-Mapper gegen echte Testinstanz getestet
+- `sync/mappers/_party_common.py` (Adressen/Kontakte/Dynamic Links, `wc_id`-basiert),
+  `customer.py` voller Graph. **Erster echter Vollimport-Test:** 100 Kunden, 105 Adressen,
+  87 Kontakte, 0 Fehler auf francetec.frappe.cloud (Frappe v16.33 / ERPNext v16.34).
+- Engine: `mapper.client` wird gesetzt (read-only WeClapp-Client für Zusatzabrufe).
+- `debug_max_pages_per_type` in Settings (Testläufe begrenzen, Watermark bleibt dann ungesetzt).
+- Kunden-Mapper lädt jetzt pro Kunde das `party`-Objekt nach (`customer` liefert
+  `customerDebtorAccountNumber` / `customerInternalNote` / `salesInvoiceEmailAddressesId` NICHT).
+- Personenkonten: `erpnext_helpers.ensure_personal_account()` legt das Debitorenkonto
+  on-demand an (Parent-Gruppe aus neuen Settings-Feldern `debtor_/creditor_parent_account`),
+  Customer.accounts wird verknüpft.
+- `reference/INSTANCE_STATE.md`: Testinstanz-Zustand (Naming, vorhandene Felder, Personenkonten).
+- Bekannt: Contact-`name` bekommt von ERPNext automatisch `-{customerNumber}`-Suffix
+  (Standard bei verknüpften Kontakten) - deterministisch, Re-Run-Abgleich via `wc_id`.
+
 Als Nächstes (Reihenfolge):
-1. **Kunden-Mapper vervollständigen**: Adressen + Kontakte (`AddressMigration`/`ContactMigration`
-   aus `reference/migration_logic/` portieren) inkl. "self"-Kontakt-Fallback für E-Mail/Telefon
-   (Altbestand ~4200/5700 Kunden), dann Bankkonten, dann Personenkonto + Zusatzfelder.
+1. Kunden-Mapper: Bankkonten + Custom Attributes (Zusatzfelder, braucht
+   `customAttributeDefinition`-Abruf) + `apply_wc_blocks` (blocked/insolvent).
 2. **Lieferanten-Mapper** (`supplier_migration.py`, weitgehend analog zu Kunden).
 3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
 4. Für Personenkonten/Konten/Lager/Zahlungsbedingungen die fehlenden `setup_*()`-Äquivalente in

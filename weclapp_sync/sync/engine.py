@@ -85,6 +85,7 @@ def sync_object_type(
 	client = client or get_client()
 	if own_client:
 		client.open()
+	mapper.client = client
 
 	# Delta-Watermark: Zeitpunkt VOR dem Lauf merken, aber erst bei Erfolg persistieren.
 	run_start_ms = client.now_ms()

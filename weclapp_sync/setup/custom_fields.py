@@ -74,9 +74,18 @@ def _extra_fields() -> dict[str, list[dict]]:
 				"insert_after": "phone_nos",
 			}
 		],
+		"Customer": [
+			{
+				"fieldname": "invoice_email",
+				"label": "Invoice Email",
+				"fieldtype": "Data",
+				"insert_after": "email_id",
+				"options": "Email",
+			}
+		],
 	}
 	for dt in ("Customer", "Supplier"):
-		fields[dt] = [
+		fields.setdefault(dt, []).extend([
 			{
 				"fieldname": "wc_zahlungsart",
 				"label": "Zahlungsart (WeClapp)",
@@ -94,7 +103,7 @@ def _extra_fields() -> dict[str, list[dict]]:
 			{"fieldname": "wc_opt_in_letter", "label": "Opt-In Brief", "fieldtype": "Check", "insert_after": "wc_opt_in_email"},
 			{"fieldname": "wc_opt_in_phone", "label": "Opt-In Telefon", "fieldtype": "Check", "insert_after": "wc_opt_in_letter"},
 			{"fieldname": "wc_opt_in_sms", "label": "Opt-In SMS", "fieldtype": "Check", "insert_after": "wc_opt_in_phone"},
-		]
+		])
 	return fields
 
 

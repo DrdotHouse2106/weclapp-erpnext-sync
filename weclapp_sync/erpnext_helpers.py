@@ -117,6 +117,52 @@ def default_currency() -> str:
 	return _settings().default_currency or "EUR"
 
 
+def company_abbr() -> str | None:
+	company = _settings().company
+	return frappe.db.get_value("Company", company, "abbr") if company else None
+
+
+def ensure_personal_account(
+	*, number: str, label: str, account_type: str, currency: str | None
+) -> str | None:
+	"""Legt ein individuelles Personenkonto (Debitor/Kreditor) an, falls noch nicht vorhanden,
+	und gibt den vollen ERPNext-Account-Namen zurück (`<nr> - <label> - <abbr>`).
+
+	`account_type`: "Receivable" (Debitor) oder "Payable" (Kreditor).
+	Parent-Gruppe kommt aus den WeClapp Settings; fehlt sie, wird None zurückgegeben
+	(Kunde/Lieferant nutzt dann das Sammelkonto).
+	Portiert aus reference/setup.py setup_personal_accounts().
+	"""
+	if not number:
+		return None
+	settings = _settings()
+	parent = settings.debtor_parent_account if account_type == "Receivable" else settings.creditor_parent_account
+	if not parent:
+		return None
+
+	company = settings.company
+	abbr = frappe.db.get_value("Company", company, "abbr")
+	label = (label or "").strip() or number
+	full_name = f"{number} - {label} - {abbr}"
+
+	if frappe.db.exists("Account", full_name):
+		return full_name
+
+	doc = frappe.new_doc("Account")
+	doc.account_name = label
+	doc.account_number = number
+	doc.company = company
+	doc.parent_account = parent
+	doc.account_type = account_type
+	# account_currency nur setzen, wenn abweichend - sonst lehnt ERPNext die Verknüpfung
+	# eines Kunden ab, dessen Währung weder Firmen- noch Kontowährung entspricht.
+	if currency and currency != default_currency():
+		doc.account_currency = currency
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc.name
+
+
 def link_or_none(doctype: str, value: str | None) -> str | None:
 	"""Gibt `value` zurück, wenn ein Dokument dieses Namens existiert, sonst None.
 	Verhindert LinkValidationError bei noch nicht angelegten Stammdaten (z.B. Payment Terms
