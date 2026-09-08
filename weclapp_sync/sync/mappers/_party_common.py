@@ -46,14 +46,32 @@ def _address_type(wc_addr: dict) -> str:
 	return "Postal"
 
 
-def upsert_address(wc_addr: dict, *, party_doctype: str, party_name: str, party_number: str) -> dict | None:
+def upsert_address(
+	wc_addr: dict,
+	*,
+	party_doctype: str,
+	party_name: str,
+	party_number: str,
+	purpose_emails: dict | None = None,
+) -> dict | None:
 	"""Legt/aktualisiert eine ERPNext-Address für eine WeClapp-Adresse an und verknüpft sie mit
-	der Partei. Rückgabe: {"name":..., "is_primary":bool, "country":...} oder None (ungültig)."""
+	der Partei. Rückgabe: {"name":..., "is_primary":bool, "country":...} oder None (ungültig).
+
+	`purpose_emails`: {"invoice": ..., "delivery": ...} - die Rechnungs-/Lieferschein-E-Mail
+	wird zusätzlich auf `Address.email_id` der Rechnungs- bzw. Lieferadresse geschrieben
+	(Standardfeld)."""
 	if not address_is_valid(wc_addr):
 		return None
 
 	wc_id = str(wc_addr.get("id") or "")
 	country = h.country_name(wc_addr.get("countryCode"))
+	purpose_emails = purpose_emails or {}
+	email_id = None
+	if wc_addr.get("invoiceAddress"):
+		email_id = purpose_emails.get("invoice")
+	elif wc_addr.get("deliveryAddress"):
+		email_id = purpose_emails.get("delivery")
+
 	fields = {
 		"address_title": party_number or wc_id,
 		"address_type": _address_type(wc_addr),
@@ -64,6 +82,7 @@ def upsert_address(wc_addr: dict, *, party_doctype: str, party_name: str, party_
 		"country": country,
 		"pincode": wc_addr.get("zipcode") or "",
 		"phone": h.standardize_phone_number(wc_addr.get("phoneNumber")),
+		"email_id": email_id or None,
 		"is_shipping_address": 1 if wc_addr.get("deliveryAddress") else 0,
 		"is_primary_address": 1 if wc_addr.get("primeAddress") else 0,
 		"wc_id": wc_id or None,

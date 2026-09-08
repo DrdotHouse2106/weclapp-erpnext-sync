@@ -90,10 +90,17 @@ Fertig:
 ### Increment 4: belegart-spezifische E-Mails, Bankkonten, Debitorenkonten je Kunde
 - WeClapp `party` führt 6 belegart-spezifische E-Mail-Purposes
   (`salesInvoice/salesOrder/delivery/dunning/quotation/purchaseEmailAddressesId` ->
-  `partyEmailAddresses[].toAddresses`). Gemappt in Customer-Data-Felder
-  `invoice_email`/`order_email`/`delivery_email`/`dunning_email`/`quotation_email`
-  (Section "E-Mail-Adressen je Belegart"), `purchase_email` auf Supplier. Nur ~37 Parteien
-  haben überhaupt welche gesetzt, aber dann maßgeblich.
+  `partyEmailAddresses[].toAddresses`). Nur ~37 Parteien haben überhaupt welche, aber dann
+  maßgeblich. **ERPNext hat dafür kein natives Feld** - Lösung (mit Nutzer abgestimmt,
+  Standardfelder wo möglich):
+  - Customer-Data-Felder `invoice_/order_/delivery_/dunning_/quotation_email`
+    (Section "E-Mail-Adressen je Belegart"), `purchase_email` auf Supplier.
+  - Rechnung/Lieferschein zusätzlich auf `Address.email_id` der Rechnungs-/Lieferadresse
+    (Standardfeld, in `_party_common.upsert_address(purpose_emails=...)`).
+  - `wc_belegart_email` (read_only, `fetch_from: customer.<feld>`) auf Sales Invoice/Order,
+    Delivery Note, Quotation, Dunning - zieht die Adresse automatisch auf den Beleg. Nutzer
+    kann dann pro Belegart eine Standard-**Notification** (kein Code) für Autoversand
+    einrichten. (`custom_fields._DOC_EMAIL_SOURCES`.)
 - Bankkonten: `_party_common.upsert_bank_account()` + `ensure_bank()` (Port aus
   reference bank_/bank_account_migration.py). WeClapp `customer.bankAccounts[]` ->
   ERPNext `Bank Account` (+ `Bank`, dedup über BIC), verknüpft mit dem Kunden, `wc_id`-idempotent.

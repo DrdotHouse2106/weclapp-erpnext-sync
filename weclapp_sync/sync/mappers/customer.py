@@ -8,10 +8,16 @@ Das `party`-Objekt (customer.id == party.id) wird pro Kunde einmal nachgeladen -
 Felder, die `customer` selbst nicht hat: `customerDebtorAccountNumber` (Personenkonto),
 `customerInternalNote`, `salesInvoiceEmailAddressesId`.
 
-Belegart-spezifische E-Mails (Rechnung/Auftrag/Lieferschein/Mahnung/Angebot) werden aus
-`party.partyEmailAddresses` in eigene Customer-Data-Felder gemappt. Bankkonten -> ERPNext
-Bank Account. Personenkonto (Debitorenkonto) je Kunde -> Customer.accounts (eigenes DATEV-Konto
-pro Kunde; ~9 von 5838 Kunden haben in WeClapp keine Debitor-Nr. und landen auf dem Sammelkonto).
+Belegart-spezifische E-Mails (Rechnung/Auftrag/Lieferschein/Mahnung/Angebot) aus
+`party.partyEmailAddresses`:
+- gespeichert in Customer-Feldern `invoice_/order_/delivery_/dunning_/quotation_email`
+- Rechnung/Lieferschein zusätzlich auf `Address.email_id` der Rechnungs-/Lieferadresse (Standardfeld)
+- auf Sales Invoice/Order, Delivery Note, Quotation, Dunning zieht ein `fetch_from`-Feld
+  `wc_belegart_email` die passende Adresse auf den Beleg -> Autoversand per Standard-"Notification"
+  möglich, ohne Code (siehe setup/custom_fields.py).
+Bankkonten -> ERPNext Bank Account. Personenkonto (Debitorenkonto) je Kunde -> Customer.accounts
+(eigenes DATEV-Konto pro Kunde; ~9 von 5838 Kunden haben in WeClapp keine Debitor-Nr. und
+landen auf dem Sammelkonto).
 
 Noch NICHT portiert (jeweils eigener Folge-Schritt, siehe CLAUDE.md):
 - Custom Attributes (Zusatzfelder) - braucht customAttributeDefinition-Abruf
@@ -136,11 +142,21 @@ class CustomerMapper(Mapper):
 		primary_contact = None
 		first_contact = None
 
+		party = self._party(record)
+		purpose_emails = {
+			"invoice": _purpose_email(party, "salesInvoiceEmailAddressesId"),
+			"delivery": _purpose_email(party, "deliveryEmailAddressesId"),
+		}
+
 		# 2) Adressen - ein Fehler bei einer Adresse darf den Kunden nicht scheitern lassen
 		#    (eigener Savepoint, damit ein Teil-Write sauber zurückgerollt wird).
 		for wc_addr in record.get("addresses") or []:
 			res = _guarded("Address", name, wc_addr, lambda a=wc_addr: pc.upsert_address(
-				a, party_doctype=_PARTY_DOCTYPE, party_name=name, party_number=number
+				a,
+				party_doctype=_PARTY_DOCTYPE,
+				party_name=name,
+				party_number=number,
+				purpose_emails=purpose_emails,
 			))
 			if res and res["is_primary"]:
 				primary_address = res

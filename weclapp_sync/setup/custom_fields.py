@@ -116,6 +116,38 @@ def _extra_fields() -> dict[str, list[dict]]:
 	return fields
 
 
+# Belegart -> Customer-Feld, aus dem die E-Mail per fetch_from auf den Beleg gezogen wird.
+# So kann der Nutzer später mit einer Standard-"Notification" pro Belegart den Autoversand
+# aktivieren, ohne dass hier Code nötig ist.
+_DOC_EMAIL_SOURCES = {
+	"Sales Invoice": ("customer", "invoice_email"),
+	"Sales Order": ("customer", "order_email"),
+	"Delivery Note": ("customer", "delivery_email"),
+	"Quotation": ("party_name", "quotation_email"),
+	"Dunning": ("customer", "dunning_email"),
+}
+
+
+def _doc_email_fields() -> dict[str, list[dict]]:
+	fields: dict[str, list[dict]] = {}
+	for dt, (link_field, customer_field) in _DOC_EMAIL_SOURCES.items():
+		fields[dt] = [
+			{
+				"fieldname": "wc_belegart_email",
+				"label": "E-Mail (WeClapp Belegart)",
+				"fieldtype": "Data",
+				"options": "Email",
+				"read_only": 1,
+				"no_copy": 1,
+				"fetch_from": f"{link_field}.{customer_field}",
+				"fetch_if_empty": 0,
+				"insert_after": "contact_email",
+				"translatable": 0,
+			}
+		]
+	return fields
+
+
 def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 	out: dict[str, list[dict]] = {}
 	for part in parts:
@@ -126,4 +158,6 @@ def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 
 def apply_custom_fields() -> None:
 	"""Idempotent - create_custom_fields aktualisiert vorhandene Felder statt zu doppeln."""
-	create_custom_fields(_merge(_wc_id_fields(), _extra_fields()), ignore_validate=True)
+	create_custom_fields(
+		_merge(_wc_id_fields(), _extra_fields(), _doc_email_fields()), ignore_validate=True
+	)
