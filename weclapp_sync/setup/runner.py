@@ -26,10 +26,16 @@ def run_setup(*, full: bool = False) -> None:
 	apply_naming()
 
 	if full:
-		# TODO(setup): setup_item_groups, setup_warehouses, setup_fiscal_years,
-		# setup_payment_terms, setup_personal_accounts, setup_bank_accounts, setup_accounts,
-		# setup_manufacturers, setup_free_text_item, setup_negative_rate_settings,
-		# setup_uom_settings  (aus reference/setup.py).
-		pass
+		from weclapp_sync.setup import masters
+
+		for step in (masters.setup_uom_settings, masters.setup_payment_terms, masters.setup_fiscal_years):
+			try:
+				step()
+				frappe.db.commit()
+			except Exception:
+				frappe.db.rollback()
+				frappe.log_error(title=f"WeClapp Setup: {step.__name__}", message=frappe.get_traceback())
+		# TODO(setup): setup_warehouses, setup_accounts, setup_bank_accounts, Kostenstellen,
+		# Steuer-Templates (instanzspezifisch - auf der Zielinstanz meist schon vorhanden).
 
 	frappe.db.commit()
