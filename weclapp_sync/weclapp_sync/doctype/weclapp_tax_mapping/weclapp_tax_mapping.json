@@ -11,7 +11,9 @@
   "column_break_1",
   "income_account",
   "expense_account",
-  "tax_account"
+  "tax_account",
+  "contra_account",
+  "discount_account"
  ],
  "fields": [
   {
@@ -61,11 +63,25 @@
   },
   {
    "columns": 2,
-   "description": "USt-/VSt-Konto. Leer = steuerfrei (keine Steuerzeile).",
+   "description": "USt-/VSt-Konto (WeClapp: Umsatzsteuerkonto bzw. Vorsteuerkonto). Leer = steuerfrei (keine Steuerzeile).",
    "fieldname": "tax_account",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Steuerkonto",
+   "options": "Account"
+  },
+  {
+   "description": "Gegenkonto (WeClapp contraAccount) - bei Reverse-Charge/ig. Erwerb die zweite Steuerbuchung.",
+   "fieldname": "contra_account",
+   "fieldtype": "Link",
+   "label": "Gegenkonto (Reverse-Charge)",
+   "options": "Account"
+  },
+  {
+   "description": "Skontokonto (WeClapp defaultDiscountAccount) - gewährte/erhaltene Skonti.",
+   "fieldname": "discount_account",
+   "fieldtype": "Link",
+   "label": "Skontokonto",
    "options": "Account"
   }
  ],

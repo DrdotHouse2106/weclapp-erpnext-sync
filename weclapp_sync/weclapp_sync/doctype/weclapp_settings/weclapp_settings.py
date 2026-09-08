@@ -3,6 +3,71 @@ from frappe.model.document import Document
 
 from weclapp_sync.sync import registry
 
+# WeClapp-tax-Feld -> Zielspalte in WeClapp Tax Mapping.
+# defaultNominalAccountNumber wird je nach Ein-/Verkauf auf income_ bzw. expense_account
+# gemappt (siehe populate_tax_mapping).
+_TAX_FIELD_MAP = {
+	"defaultNominalAccountNumber": "income_account",
+	"accountNumber": "tax_account",
+	"contraAccountNumber": "contra_account",
+	"defaultDiscountAccountNumber": "discount_account",
+}
+
+_PURCHASE_TAX_TYPES = {"INPUT_VAT", "INPUT_VAT_REVERSED", "IMPORT_VAT"}
+
+
+def _is_purchase_tax(t: dict) -> bool:
+	tt = t.get("taxType") or ""
+	if tt in _PURCHASE_TAX_TYPES:
+		return True
+	# Fallback über den Namen (WeClapp-Konvention "(EK)" = Einkauf, "Vorsteuer"/"Erwerb")
+	nm = (t.get("name") or "").lower()
+	return "(ek)" in nm or "vorsteuer" in nm or "erwerb" in nm
+
+
+def _account_nature(wc_field: str, is_purchase: bool) -> tuple[str, str | None]:
+	"""(root_type, account_type) für ein neu anzulegendes Konto."""
+	if wc_field == "defaultNominalAccountNumber":
+		return ("Expense", "Expense Account") if is_purchase else ("Income", "Income Account")
+	if wc_field == "accountNumber":
+		return ("Asset", "Tax") if is_purchase else ("Liability", "Tax")
+	if wc_field == "contraAccountNumber":
+		# Reverse-Charge-Gegenbuchung: USt-Seite
+		return ("Liability", "Tax")
+	# defaultDiscountAccountNumber = Skontokonto: 3xxx erhaltene Skonti (Aufwand),
+	# 8xxx gewährte Skonti (Erlös-mindernd)
+	return ("Expense", None) if is_purchase else ("Income", None)
+
+
+_SKR03_NAMES = {
+	"1767": "USt im anderen EG-Land stpfl. Lieferung",
+	"1775": "Umsatzsteuer nach § 13b UStG 16 %",
+	"1787": "Umsatzsteuer § 13b UStG 19 %",
+	"3123": "Innergemeinschaftlicher Erwerb ohne Vorsteuerabzug",
+	"3151": "Erhaltene Skonti aus ig. Erwerb ohne Vorsteuerabzug",
+	"3300": "Abziehbare Vorsteuer 7 %",
+	"3400": "Abziehbare Vorsteuer 19 %",
+	"3420": "Abziehbare Vorsteuer aus ig. Erwerb 7 %",
+	"3425": "Abziehbare Vorsteuer aus ig. Erwerb 19 %",
+	"3730": "Erhaltene Skonti",
+	"3731": "Erhaltene Skonti 7 % Vorsteuer",
+	"3736": "Erhaltene Skonti 19 % Vorsteuer",
+	"3745": "Erhaltene Skonti aus ig. Erwerb",
+	"3746": "Erhaltene Skonti aus ig. Erwerb 7 %",
+	"3748": "Erhaltene Skonti § 13b UStG",
+	"8100": "Steuerfreie Umsätze § 4 Nr. 8 ff. UStG",
+	"8120": "Steuerfreie Umsätze Drittland",
+	"8125": "Steuerfreie ig. Lieferung § 4 Nr. 1b UStG",
+	"8320": "Im anderen EG-Land stpfl. Lieferungen",
+	"8339": "Nicht steuerbare Umsätze (EG-Land / Drittland)",
+	"8730": "Gewährte Skonti",
+	"8731": "Gewährte Skonti 7 % USt",
+	"8735": "Gewährte Skonti aus steuerfreien Umsätzen",
+	"8736": "Gewährte Skonti 19 % USt",
+	"8743": "Gewährte Skonti aus steuerfreien ig. Lieferungen",
+	"8745": "Gewährte Skonti stpfl. EG-Lieferung",
+}
+
 
 class WeClappSettings(Document):
 	def validate(self):
@@ -57,149 +122,107 @@ class WeClappSettings(Document):
 		self.save()
 		return "Objekttyp-Liste aktualisiert."
 
-	@frappe.whitelist()
-	def populate_tax_mapping(self):
-		"""Holt die WeClapp-`tax`-Liste (read-only) und legt/aktualisiert je eine Zeile an.
-
-		WeClapp führt pro Steuer: `accountNumber` (USt/VSt-Konto), `defaultNominalAccountNumber`
-		(Buchungskonto = Erlös bzw. Aufwand/Wareneingang). `taxType == "INPUT_VAT"` ->
-		Einkauf (Aufwandskonto), sonst Verkauf (Erlöskonto). Konten werden über die
-		Nummer im ERPNext-Kontenplan aufgelöst - fehlt sie, bleibt das Feld leer und die
-		Nummer landet in der Rückmeldung ("fehlende Konten")."""
+	def _fetch_wc_taxes(self):
 		from weclapp_sync.sync.settings import get_client
 
 		client = get_client()
 		client.open()
 		try:
-			taxes = list(client.iter_all("tax"))
+			return list(client.iter_all("tax"))
 		finally:
 			client.close()
 
+	@frappe.whitelist()
+	def populate_tax_mapping(self):
+		"""Holt die WeClapp-`tax`-Liste (read-only) und legt/aktualisiert je eine Zeile an.
+
+		WeClapp führt pro Steuer 4 Konten:
+		- `defaultNominalAccountNumber` = Buchungskonto -> Erlöskonto (VALUE_ADDED_TAX) bzw.
+		  Aufwands-/Wareneingangskonto (INPUT_VAT*)
+		- `accountNumber` = USt-/VSt-Konto -> Steuerkonto
+		- `contraAccountNumber` = Gegenkonto (Reverse-Charge / ig. Erwerb)
+		- `defaultDiscountAccountNumber` = Skontokonto
+		Aufgelöst über die Kontonummer im ERPNext-Kontenplan. Fehlt eine, bleibt das Feld leer
+		und die Nummer landet in der Rückmeldung."""
+		taxes = self._fetch_wc_taxes()
 		by_id = {row.wc_tax_id: row for row in self.tax_mappings}
 		company = self.company
 		missing: dict[str, str] = {}
 
-		def _acc(number: str | None) -> str | None:
+		def _acc(number):
 			if not number:
 				return None
-			filters = {"account_number": number, "company": company} if company else {"account_number": number}
-			name = frappe.db.get_value("Account", filters, "name")
-			return name
+			f = {"account_number": number, "company": company} if company else {"account_number": number}
+			return frappe.db.get_value("Account", f, "name")
 
 		added = 0
-		used_numbers: dict[str, str] = {}
 		for t in taxes:
 			tid = str(t.get("id"))
-			is_purchase = t.get("taxType") == "INPUT_VAT"
-			nominal = t.get("defaultNominalAccountNumber")
-			vat = t.get("accountNumber")
-			for num in (nominal, vat):
-				if num:
-					used_numbers[num] = t.get("name") or ""
-
+			is_purchase = _is_purchase_tax(t)
+			nm = t.get("name") or ""
 			row = by_id.get(tid)
 			if row is None:
 				row = self.append("tax_mappings", {})
 				row.wc_tax_id = tid
 				added += 1
-			row.wc_tax_name = t.get("name")
+			row.wc_tax_name = nm
 			try:
 				row.wc_rate = float(t.get("taxValue") or 0)
 			except (TypeError, ValueError):
 				row.wc_rate = 0
 
-			nominal_acc = _acc(nominal)
-			vat_acc = _acc(vat)
-			if is_purchase:
-				if not row.expense_account:
-					row.expense_account = nominal_acc
-			else:
-				if not row.income_account:
-					row.income_account = nominal_acc
-			if not row.tax_account:
-				row.tax_account = vat_acc
-
-			if nominal and not nominal_acc:
-				missing[nominal] = used_numbers.get(nominal, "")
-			if vat and not vat_acc:
-				missing[vat] = used_numbers.get(vat, "")
+			for wc_field, target_field in _TAX_FIELD_MAP.items():
+				num = t.get(wc_field)
+				if not num:
+					continue
+				# Buchungskonto: bei Einkauf -> expense_account, bei Verkauf -> income_account
+				tf = target_field
+				if wc_field == "defaultNominalAccountNumber":
+					tf = "expense_account" if is_purchase else "income_account"
+				if getattr(row, tf, None):
+					continue
+				resolved = _acc(num)
+				if resolved:
+					setattr(row, tf, resolved)
+				else:
+					missing[num] = nm
 
 		self.save()
 		msg = f"{len(taxes)} WeClapp-Steuern verarbeitet, {added} neue Zeilen."
 		if missing:
 			lst = ", ".join(f"{n} ({d})" for n, d in sorted(missing.items()))
 			msg += (
-				f"\n\n{len(missing)} Konten fehlen im ERPNext-Kontenplan (in WeClapp referenziert, "
-				f"hier nicht vorhanden). Nummer (Bezeichnung):\n{lst}\n\n"
-				"Diese Konten im Kontenplan anlegen (SKR03) und den Button erneut klicken - "
-				"dann füllen sich die leeren Zeilen automatisch."
+				f"\n\n{len(missing)} Konten fehlen im ERPNext-Kontenplan:\n{lst}\n\n"
+				"Button 'Fehlende Steuerkonten anlegen (SKR03)' klicken, dann diesen erneut."
 			)
 		return msg
 
 	@frappe.whitelist()
 	def create_missing_tax_accounts(self):
-		"""Legt die von WeClapp-Steuern referenzierten, im ERPNext-Kontenplan fehlenden Konten
-		an (SKR03). Nature aus dem WeClapp-taxType:
-		- Buchungskonto (defaultNominalAccountNumber): VALUE_ADDED_TAX -> Erlöskonto (Income),
-		  INPUT_VAT -> Aufwand (Expense)
-		- Steuerkonto (accountNumber): VALUE_ADDED_TAX -> USt (Liability, Tax),
-		  INPUT_VAT -> VSt (Asset, Tax)
-		Parent + genaue Kontoart werden von einem vorhandenen Geschwisterkonto übernommen."""
-		from weclapp_sync.sync.settings import get_client
-
+		"""Legt die von WeClapp-Steuern referenzierten, im Kontenplan fehlenden Konten an (SKR03).
+		root_type/Kontoart aus dem WeClapp-Feld + taxType; Parent von einem Geschwisterkonto."""
 		if not self.company:
 			frappe.throw("Bitte zuerst die Company setzen.")
 
-		client = get_client()
-		client.open()
-		try:
-			taxes = list(client.iter_all("tax"))
-		finally:
-			client.close()
+		taxes = self._fetch_wc_taxes()
 
-		# number -> (root_type, account_type, name)
-		want: dict[str, tuple[str, str, str]] = {}
+		# number -> (root_type, account_type, wc_tax_name)
+		want: dict[str, tuple[str, str | None, str]] = {}
 		for t in taxes:
-			is_purchase = t.get("taxType") == "INPUT_VAT"
+			is_purchase = _is_purchase_tax(t)
 			nm = t.get("name") or ""
-			nominal = t.get("defaultNominalAccountNumber")
-			vat = t.get("accountNumber")
-			if nominal:
-				want.setdefault(
-					nominal,
-					("Expense", "Expense Account", nm) if is_purchase else ("Income", "Income Account", nm),
-				)
-			if vat:
-				want.setdefault(vat, ("Asset", "Tax", nm) if is_purchase else ("Liability", "Tax", nm))
+			for wc_field in _TAX_FIELD_MAP:
+				num = t.get(wc_field)
+				if num:
+					want.setdefault(num, _account_nature(wc_field, is_purchase) + (nm,))
 
 		def _acc(num):
 			return frappe.db.get_value("Account", {"account_number": num, "company": self.company}, "name")
 
-		# Geschwister-Parent je root_type (ein vorhandenes Nicht-Gruppen-Konto)
-		def _sibling_parent(root_type: str) -> str | None:
-			name = frappe.db.get_value(
-				"Account",
-				{"company": self.company, "root_type": root_type, "is_group": 0},
-				"parent_account",
+		def _sibling_parent(root_type):
+			return frappe.db.get_value(
+				"Account", {"company": self.company, "root_type": root_type, "is_group": 0}, "parent_account"
 			)
-			return name
-
-		# SKR03-Standardbezeichnungen für die typischen fehlenden Konten (die WeClapp-API
-		# liefert nur den Steuernamen, nicht den Kontonamen).
-		skr03_names = {
-			"1767": "USt im anderen EG-Land stpfl. Lieferung",
-			"1775": "Umsatzsteuer nach § 13b UStG 16 %",
-			"3123": "Innergemeinschaftlicher Erwerb ohne Vorsteuerabzug",
-			"3300": "Abziehbare Vorsteuer 7 %",
-			"3400": "Abziehbare Vorsteuer 19 %",
-			"3420": "Abziehbare Vorsteuer aus innergemeinschaftlichem Erwerb 7 %",
-			"3425": "Abziehbare Vorsteuer aus innergemeinschaftlichem Erwerb 19 %",
-			"8100": "Steuerfreie Umsätze § 4 Nr. 8 ff. UStG",
-			"8120": "Steuerfreie Umsätze Drittland",
-			"8125": "Steuerfreie innergemeinschaftliche Lieferung § 4 Nr. 1b UStG",
-			"8320": "Im anderen EG-Land stpfl. Lieferungen",
-			"8339": "Nicht steuerbare Umsätze (EG-Land / Drittland)",
-		}
 
 		created, skipped = [], []
 		for num, (root_type, acc_type, nm) in sorted(want.items()):
@@ -210,14 +233,14 @@ class WeClappSettings(Document):
 				skipped.append(f"{num} (kein Parent für {root_type})")
 				continue
 			try:
-				label = skr03_names.get(num) or nm or num
 				doc = frappe.new_doc("Account")
 				doc.account_number = num
-				doc.account_name = label[:140]
+				doc.account_name = (_SKR03_NAMES.get(num) or nm or num)[:140]
 				doc.company = self.company
 				doc.parent_account = parent
 				doc.root_type = root_type
-				doc.account_type = acc_type
+				if acc_type:
+					doc.account_type = acc_type
 				doc.flags.ignore_permissions = True
 				doc.insert()
 				created.append(doc.name)
@@ -229,7 +252,7 @@ class WeClappSettings(Document):
 		if created:
 			out += "\n" + "\n".join(created)
 		if skipped:
-			out += f"\n\nÜbersprungen ({len(skipped)}):\n" + "\n".join(skipped)
+			out += f"\n\nUebersprungen ({len(skipped)}):\n" + "\n".join(skipped)
 		out += "\n\nJetzt 'Steuer-Mapping aus WeClapp befuellen' erneut klicken."
 		return out
 

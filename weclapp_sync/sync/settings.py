@@ -54,6 +54,8 @@ def tax_mapping() -> dict:
 			"income_account": row.income_account or None,
 			"expense_account": row.expense_account or None,
 			"tax_account": row.tax_account or None,
+			"contra_account": row.get("contra_account") or None,
+			"discount_account": row.get("discount_account") or None,
 			"rate": float(row.wc_rate or 0),
 			"name": row.wc_tax_name or "",
 		}
