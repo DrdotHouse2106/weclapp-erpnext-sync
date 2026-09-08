@@ -37,6 +37,15 @@ def get_object_type_row(key: str):
 	return None
 
 
+def price_list_mapping() -> dict:
+	"""{sales_channel: price_list_name} für aktivierte Preiskanäle."""
+	return {
+		row.sales_channel: row.price_list
+		for row in get_settings().price_list_mappings
+		if row.enabled and row.price_list
+	}
+
+
 def tax_mapping() -> dict:
 	"""{wc_tax_id: {income_account, expense_account, tax_account, rate, name}} aus den Settings."""
 	out: dict = {}

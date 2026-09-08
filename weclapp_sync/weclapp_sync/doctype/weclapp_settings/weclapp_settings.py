@@ -103,6 +103,50 @@ class WeClappSettings(Document):
 		return f"{len(taxes)} WeClapp-Steuern verarbeitet, {added} neue Zeilen."
 
 	@frappe.whitelist()
+	def populate_price_list_mappings(self):
+		"""Sammelt die distinct salesChannels aus WeClapp `articlePrice`, legt je Kanal eine
+		ERPNext-Preisliste an (falls noch nicht vorhanden) und trägt sie hier ein.
+		NET* = netto, GROSS* = brutto (nur Info-Flag)."""
+		from weclapp_sync.sync.settings import get_client
+
+		client = get_client()
+		client.open()
+		try:
+			channels = sorted(
+				{
+					row.get("salesChannel")
+					for row in client.iter_all("articlePrice", properties="id,salesChannel")
+					if row.get("salesChannel")
+				}
+			)
+		finally:
+			client.close()
+
+		by_channel = {row.sales_channel: row for row in self.price_list_mappings}
+		added = 0
+		for channel in channels:
+			is_gross = channel.upper().startswith("GROSS")
+			list_name = f"WeClapp {channel}"
+			if not frappe.db.exists("Price List", list_name):
+				pl = frappe.new_doc("Price List")
+				pl.price_list_name = list_name
+				pl.selling = 1
+				pl.currency = self.default_currency or "EUR"
+				pl.flags.ignore_permissions = True
+				pl.insert()
+
+			row = by_channel.get(channel)
+			if row is None:
+				row = self.append("price_list_mappings", {})
+				row.sales_channel = channel
+				row.price_list = list_name
+				added += 1
+			row.prices_include_tax = 1 if is_gross else 0
+
+		self.save()
+		return f"{len(channels)} Preiskanäle, {added} neue Zeilen."
+
+	@frappe.whitelist()
 	def start_full_import(self):
 		"""Enqueued den Vollimport als langlaufenden Background-Job."""
 		if not self.enabled:

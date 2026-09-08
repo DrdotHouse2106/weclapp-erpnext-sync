@@ -156,9 +156,18 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
 - `sync/mappers/quotation.py` (`QuotationMapper`, registriert, 4/14): `AN-<nr>`, Positionen,
   Steuern, Kopfrabatt, optional submit.
 
+### Increment 8: Preiskanäle -> Preislisten
+- WeClapp: 15 Preiskanäle (NET1-8 netto, GROSS1-7 brutto), alle EUR, alle mit Mengenstaffel
+  (`priceScaleType=SCALE_FROM`, `priceScaleValue`=min qty), nur 8 kundenspezifische Preise.
+- Doctype `WeClapp Price List Mapping` (Child von Settings, `price_list_mappings`) +
+  Button `populate_price_list_mappings`: legt je Kanal eine ERPNext Price List "WeClapp <chan>"
+  an, Nutzer aktiviert die gewünschten Kanäle.
+- `article._sync_prices()`: jeder Preis eines aktivierten Kanals -> Item Price in der gemappten
+  Liste, mit `min_qty` (Staffel), `valid_from/upto`, `customer` (wc_id-Lookup). Idempotent.
+
 Als Nächstes:
-1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping-Button + Konten/Templates/
-   Kostenstelle in Settings prüfen; Kunden-Delta einmal re-runnen (setzt Watermark).
+1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
+   Konten/Templates/Kostenstelle in Settings prüfen; Kunden-Delta einmal re-runnen (Watermark).
 2. Angebots-Import testen, dann `sales_order` + `sales_invoice` (+ `payment_entry` aus
    `salesOpenItem`), dann Einkaufsseite. Steuerlogik in `_transaction.py` ist da, muss aber
    gegen echte Belege verifiziert werden (Vorgängerprojekt-CLAUDE.md: gelöste Fälle).

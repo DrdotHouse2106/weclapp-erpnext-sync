@@ -3,6 +3,11 @@
 Portiert aus reference/.../article_migration.py. Kern-Item + Barcode + Hersteller + Artikelgruppe
 + Zusatzfelder + ein Verkaufspreis (erster allgemeiner WeClapp-Preis).
 
+Preise: WeClapp hat 15 Preiskanäle (NET1-8 netto, GROSS1-7 brutto). Über die
+"WeClapp Price List Mapping"-Tabelle in den Settings wird je aktiviertem Kanal eine
+ERPNext-Preisliste bespielt - jeder Kanal-Preis inkl. Mengenstaffel (`priceScaleValue` ->
+min_qty) und Gültigkeit. Kundenspezifische Preise (`customerId`) -> Item Price mit `customer`.
+
 Noch NICHT portiert (Folge-Schritt):
 - Bezugsquellen (`supplySources` -> Item Supplier / item_defaults.default_supplier / Einkaufspreis)
   - `articleSupplySource` hat 87k Einträge, muss pro Artikel gefiltert nachgeladen werden.
@@ -20,7 +25,7 @@ import frappe
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.sync.mappers import _custom_attributes as ca
 from weclapp_sync.sync.mappers.base import Mapper
-from weclapp_sync.sync.settings import get_settings
+from weclapp_sync.sync.settings import get_settings, price_list_mapping
 
 
 class ArticleMapper(Mapper):
@@ -29,6 +34,7 @@ class ArticleMapper(Mapper):
 	def __init__(self) -> None:
 		super().__init__()
 		self._categories: dict | None = None
+		self._price_lists: dict | None = None
 
 	def should_skip(self, record: dict) -> bool:
 		return not (record.get("articleNumber") and record.get("name"))
@@ -71,41 +77,71 @@ class ArticleMapper(Mapper):
 		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
 		return fields
 
+	def _channel_lists(self) -> dict:
+		if self._price_lists is None:
+			self._price_lists = price_list_mapping()
+		return self._price_lists
+
 	def upsert(self, record: dict) -> str | None:
 		name = super().upsert(record)
 		if not name:
 			return None
-		self._sync_selling_price(name, record)
+		self._sync_prices(name, record)
 		return name
 
-	def _sync_selling_price(self, item_code: str, record: dict) -> None:
-		"""Erster allgemeiner (nicht kundenspezifischer) WeClapp-Preis -> ERPNext Item Price
-		in der Standard-Verkaufspreisliste. Idempotent über (item, price_list, currency, selling)."""
-		general = [p for p in record.get("articlePrices") or [] if p.get("customerId") is None]
-		if not general:
-			return
-		p = general[0]
-		rate = p.get("price")
-		if rate is None:
-			return
-		price_list = get_settings().default_selling_price_list or "Standard Selling"
-		currency = h.link_or_none("Currency", p.get("currencyName")) or h.default_currency()
-		if not frappe.db.exists("Price List", price_list):
+	def _sync_prices(self, item_code: str, record: dict) -> None:
+		"""Jeder WeClapp-Preis eines aktivierten Preiskanals -> ERPNext Item Price in der
+		gemappten Preisliste, inkl. Mengenstaffel (`priceScaleValue` -> min_qty) und Gültigkeit.
+		Idempotent über (item, price_list, currency, min_qty, customer, selling)."""
+		channels = self._channel_lists()
+		if not channels:
 			return
 
-		existing = frappe.db.exists(
-			"Item Price",
-			{"item_code": item_code, "price_list": price_list, "currency": currency, "selling": 1},
-		)
-		doc = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
-		doc.update(
-			{
-				"item_code": item_code,
-				"price_list": price_list,
-				"currency": currency,
-				"selling": 1,
-				"price_list_rate": float(rate),
-			}
-		)
-		doc.flags.ignore_permissions = True
-		doc.save() if existing else doc.insert()
+		for p in record.get("articlePrices") or []:
+			price_list = channels.get(p.get("salesChannel"))
+			if not price_list or p.get("price") is None:
+				continue
+			if not frappe.db.exists("Price List", price_list):
+				continue
+
+			currency = h.link_or_none("Currency", p.get("currencyName")) or h.default_currency()
+			min_qty = _to_float(p.get("priceScaleValue"), 0.0)
+			customer = None
+			if p.get("customerId"):
+				customer = frappe.db.get_value("Customer", {"wc_id": str(p["customerId"])}, "name")
+
+			existing = frappe.db.exists(
+				"Item Price",
+				{
+					"item_code": item_code,
+					"price_list": price_list,
+					"currency": currency,
+					"min_qty": min_qty,
+					"customer": customer or "",
+					"selling": 1,
+				},
+			)
+
+			doc = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+			doc.update(
+				{
+					"item_code": item_code,
+					"price_list": price_list,
+					"currency": currency,
+					"selling": 1,
+					"min_qty": min_qty,
+					"customer": customer,
+					"price_list_rate": float(p["price"]),
+					"valid_from": h.date_from_ts(p.get("startDate")),
+					"valid_upto": h.date_from_ts(p.get("endDate")),
+				}
+			)
+			doc.flags.ignore_permissions = True
+			doc.save() if existing else doc.insert()
+
+
+def _to_float(v, default: float) -> float:
+	try:
+		return float(v)
+	except (TypeError, ValueError):
+		return default

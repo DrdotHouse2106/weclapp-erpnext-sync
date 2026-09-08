@@ -41,6 +41,10 @@
   "default_item_group",
   "default_selling_price_list",
   "default_buying_price_list",
+  "section_price_lists",
+  "price_lists_help",
+  "populate_price_list_mappings",
+  "price_list_mappings",
   "section_accounts",
   "debtor_parent_account",
   "creditor_parent_account",
@@ -275,6 +279,27 @@
    "fieldtype": "Link",
    "label": "Einkaufspreisliste",
    "options": "Price List"
+  },
+  {
+   "fieldname": "section_price_lists",
+   "fieldtype": "Section Break",
+   "label": "Preiskanäle → Preislisten"
+  },
+  {
+   "fieldname": "price_lists_help",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted\">WeClapp führt mehrere Preiskanäle (NET1–8 netto, GROSS1–7 brutto). Der Button legt je Kanal eine ERPNext-Preisliste an und trägt sie hier ein – danach die gewünschten Kanäle auf „Synchronisieren“ setzen. Der Artikel-Mapper schreibt jeden Kanal-Preis (inkl. Mengenstaffel) in seine Preisliste.</p>"
+  },
+  {
+   "fieldname": "populate_price_list_mappings",
+   "fieldtype": "Button",
+   "label": "Preiskanäle aus WeClapp befüllen"
+  },
+  {
+   "fieldname": "price_list_mappings",
+   "fieldtype": "Table",
+   "label": "Preiskanal-Mapping",
+   "options": "WeClapp Price List Mapping"
   },
   {
    "fieldname": "section_accounts",
