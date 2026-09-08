@@ -184,6 +184,23 @@ class WeClappSettings(Document):
 			)
 			return name
 
+		# SKR03-Standardbezeichnungen für die typischen fehlenden Konten (die WeClapp-API
+		# liefert nur den Steuernamen, nicht den Kontonamen).
+		skr03_names = {
+			"1767": "USt im anderen EG-Land stpfl. Lieferung",
+			"1775": "Umsatzsteuer nach § 13b UStG 16 %",
+			"3123": "Innergemeinschaftlicher Erwerb ohne Vorsteuerabzug",
+			"3300": "Abziehbare Vorsteuer 7 %",
+			"3400": "Abziehbare Vorsteuer 19 %",
+			"3420": "Abziehbare Vorsteuer aus innergemeinschaftlichem Erwerb 7 %",
+			"3425": "Abziehbare Vorsteuer aus innergemeinschaftlichem Erwerb 19 %",
+			"8100": "Steuerfreie Umsätze § 4 Nr. 8 ff. UStG",
+			"8120": "Steuerfreie Umsätze Drittland",
+			"8125": "Steuerfreie innergemeinschaftliche Lieferung § 4 Nr. 1b UStG",
+			"8320": "Im anderen EG-Land stpfl. Lieferungen",
+			"8339": "Nicht steuerbare Umsätze (EG-Land / Drittland)",
+		}
+
 		created, skipped = [], []
 		for num, (root_type, acc_type, nm) in sorted(want.items()):
 			if _acc(num):
@@ -193,9 +210,10 @@ class WeClappSettings(Document):
 				skipped.append(f"{num} (kein Parent für {root_type})")
 				continue
 			try:
+				label = skr03_names.get(num) or nm or num
 				doc = frappe.new_doc("Account")
 				doc.account_number = num
-				doc.account_name = f"{num} - {nm}"[:140] if nm else num
+				doc.account_name = label[:140]
 				doc.company = self.company
 				doc.parent_account = parent
 				doc.root_type = root_type
