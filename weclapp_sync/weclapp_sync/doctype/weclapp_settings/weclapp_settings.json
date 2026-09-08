@@ -26,7 +26,15 @@
   "full_import_help",
   "run_full_import",
   "section_mapping_defaults",
-  "mapping_defaults_help"
+  "mapping_defaults_help",
+  "company",
+  "default_currency",
+  "default_customer_group_company",
+  "default_customer_group_individual",
+  "column_break_mapping",
+  "default_territory",
+  "default_territory_germany",
+  "default_uom"
  ],
  "fields": [
   {
@@ -155,7 +163,59 @@
   {
    "fieldname": "mapping_defaults_help",
    "fieldtype": "HTML",
-   "options": "<p class=\"text-muted\">Noch nicht implementiert. Hier kommen die Konten-/Gruppen-/Territory-/UOM-Standardwerte hin, die bisher als Konstanten in <code>reference/config_example.py</code> lagen – sie werden mit den Objekttyp-Mappern nachgezogen.</p>"
+   "options": "<p class=\"text-muted\">Fallback-Werte für die Feld-Mapper (entsprechen den Konstanten aus <code>reference/config_example.py</code>). Weitere Konten-/Preislisten-Felder kommen mit den jeweiligen Mappern hinzu.</p>"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "mandatory_depends_on": "enabled",
+   "options": "Company"
+  },
+  {
+   "default": "EUR",
+   "fieldname": "default_currency",
+   "fieldtype": "Link",
+   "label": "Standardwährung",
+   "options": "Currency"
+  },
+  {
+   "description": "Kundengruppe für Firmenkunden (WeClapp partyType != PERSON).",
+   "fieldname": "default_customer_group_company",
+   "fieldtype": "Link",
+   "label": "Kundengruppe – Firma",
+   "options": "Customer Group"
+  },
+  {
+   "description": "Kundengruppe für Privatkunden (WeClapp partyType == PERSON).",
+   "fieldname": "default_customer_group_individual",
+   "fieldtype": "Link",
+   "label": "Kundengruppe – Privat",
+   "options": "Customer Group"
+  },
+  {
+   "fieldname": "column_break_mapping",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Fallback-Territory für alle Länder außer Deutschland.",
+   "fieldname": "default_territory",
+   "fieldtype": "Link",
+   "label": "Territory – Standard",
+   "options": "Territory"
+  },
+  {
+   "fieldname": "default_territory_germany",
+   "fieldtype": "Link",
+   "label": "Territory – Deutschland",
+   "options": "Territory"
+  },
+  {
+   "default": "Nos",
+   "fieldname": "default_uom",
+   "fieldtype": "Link",
+   "label": "Standard-Mengeneinheit",
+   "options": "UOM"
   }
  ],
  "index_web_pages_for_search": 1,

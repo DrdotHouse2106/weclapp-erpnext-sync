@@ -99,13 +99,12 @@ def iter_specs() -> Iterator[ObjectTypeSpec]:
 # register(ObjectTypeSpec(...)) ergänzen. Bis dahin bleibt der Typ "geplant" und wird beim
 # Sync übersprungen (mit Hinweis im Log).
 # ---------------------------------------------------------------------------
-#
-# Beispiel (noch auskommentiert, Mapper fehlt):
-#
-# register(ObjectTypeSpec(
-#     key="customer",
-#     label="Kunden",
-#     weclapp_doctype=WeClappDocType.CUSTOMER,
-#     target_doctype="Customer",
-#     mapper_path="weclapp_sync.sync.mappers.customer:CustomerMapper",
-# ))
+register(
+	ObjectTypeSpec(
+		key="customer",
+		label="Kunden",
+		weclapp_doctype=WeClappDocType.CUSTOMER,
+		target_doctype="Customer",
+		mapper_path="weclapp_sync.sync.mappers.customer:CustomerMapper",
+	)
+)

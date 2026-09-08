@@ -5,8 +5,39 @@ Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen 
 
 ## Stand der Umsetzung (2026-09-08)
 
-**Increment 1 fertig: App-Gerüst + Unterbau. Noch keine Feld-Mapper -> es wird real noch nichts
-synchronisiert, weil die Registry 0 Objekttypen kennt.**
+**Increment 1 + 2 fertig: App-Gerüst + Unterbau + Setup-Layer + erster (reduzierter)
+Kunden-Mapper. Registry kennt 1 von 14 Typen (`customer`).**
+
+### Increment 2 (nach Increment 1, siehe unten):
+- `weclapp_sync/setup/` - idempotenter Setup-Vorlauf. `custom_fields.py`: `wc_id` +
+  `wc_last_modified` (Data, read_only) auf allen Sync-Zieltypen, plus `wc_zahlungsart`,
+  `wc_opt_in_email/letter/phone/sms`, `wc_fax` (Contact) - portiert aus
+  `reference/setup.py` setup_customer_supplier_extra_fields. `naming.py`: Property Setter
+  `autoname=Prompt` für Customer/Supplier/Sales Invoice/... (portiert aus setup_naming).
+  `runner.py` `run_setup(full=)` - läuft bei `after_install`, `after_migrate` (hooks) und als
+  Vorlauf von `run_full_import()`. **Datenintensive setup_*() (Konten, Lager, Geschäftsjahre,
+  Zahlungsbedingungen, Personenkonten, Artikelgruppen, ...) noch TODO in `runner.py`.**
+- `weclapp_sync/erpnext_helpers.py` - Port von `reference/erpnext/en_helper.py`. Statische
+  Formatierer (Datum aus epoch-ms, Telefon-Normalisierung, `strip_html` mit
+  Mehrfach-Unescape, `custom_fieldname`). Settings-abhängig: `territory_for_country`,
+  `country_name` (ISO-Code -> ERPNext Country via `frappe.db`), `default_uom/currency`.
+- `weclapp_sync/sync/mappers/customer.py` - **CustomerMapper, bewusst reduziert.** Mappt nur
+  das Kern-`Customer`-Dokument: customer_name/type/group (Gruppen aus Settings), website,
+  tax_id, default_currency, disabled=0, customer_details (nur `description`, ohne Zusatz-
+  API-Calls), payment_terms, wc_zahlungsart, wc_opt_in_*. **NICHT portiert:** Adressen,
+  Kontakte (inkl. "self"-Kontakt-Fallback für E-Mail/Telefon - im Altbestand ~4200/5700
+  Kunden betroffen!), Bankkonten, Personenkonto (`party.customerDebtorAccountNumber`),
+  Zusatzfelder (`customAttributeDefinition`-Abruf nötig), Anhänge, interne Notiz/Kommentare
+  aus dem `party`-Objekt. Jeweils eigener Folge-Schritt.
+- `mappers/base.py` `upsert()` erweitert: findet Bestandsdokument zuerst über `wc_id`-Feld,
+  dann über deterministischen Namen; setzt `wc_id`/`wc_last_modified` automatisch; erzwingt
+  bei `forces_name` den Dokumentnamen via `insert(set_name=...)` (braucht `autoname=Prompt`).
+- WeClapp Settings: Abschnitt "Mapping-Standardwerte" jetzt mit realen Feldern (company,
+  default_currency, customer_group_company/individual, territory/territory_germany, uom).
+- Client `iter_pages()`/Delta-Filter live gegen francetec.weclapp.com geprüft (read-only):
+  Paginierung (119 quotation = 50+50+19) und `lastModifiedDate-gt` korrekt.
+
+### Increment 1:
 
 Fertig:
 - Frappe-App `weclapp_sync/`: `pyproject.toml`, `hooks.py` (Scheduler-Cron + `after_install`),
@@ -42,16 +73,18 @@ Fertig:
     `post_run()` für Belegketten-Nachlauf.
 
 Als Nächstes (Reihenfolge):
-1. Custom Fields (`wc_id` etc. auf Customer/Item/Sales Invoice/...) als Fixtures + Port des
-   Custom-Field-Teils aus `reference/setup.py`.
-2. Ersten Mapper: **Kunden** (`reference/migration_logic/full_field_mapping/customer_migration.py`
-   -> `weclapp_sync/sync/mappers/customer.py`, REST-Aufrufe -> `frappe.get_doc`), dann
-   `register(ObjectTypeSpec(key="customer", ...))` in `registry.py`.
-3. `reference/erpnext/en_helper.py` portieren (Namens-/Territory-/UOM-/Datums-Helfer), dabei
-   `config.*` -> Felder aus WeClapp Settings.
-4. Weitere Mapper in `SYNC_ORDER`-Reihenfolge.
-5. `setup_*()`-Äquivalente (Stammdaten/Struktur) als Vorlauf von `run_full_import()`.
-6. Mapping-Standardwert-Felder ins Settings-Formular (aus `reference/config_example.py`).
+1. **Kunden-Mapper vervollständigen**: Adressen + Kontakte (`AddressMigration`/`ContactMigration`
+   aus `reference/migration_logic/` portieren) inkl. "self"-Kontakt-Fallback für E-Mail/Telefon
+   (Altbestand ~4200/5700 Kunden), dann Bankkonten, dann Personenkonto + Zusatzfelder.
+2. **Lieferanten-Mapper** (`supplier_migration.py`, weitgehend analog zu Kunden).
+3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
+4. Für Personenkonten/Konten/Lager/Zahlungsbedingungen die fehlenden `setup_*()`-Äquivalente in
+   `weclapp_sync/setup/runner.py` (`full=True`-Zweig) ergänzen - vor den abhängigen Mappern.
+5. Transaktionsbelege in `SYNC_ORDER`-Reihenfolge (Rechnung, Auftrag, Zahlung, ...) - hier gelten
+   die im Vorgängerprojekt gelösten Fachprobleme (Steuer-Mapping, Zahlungsabgleich), siehe dessen
+   CLAUDE.md.
+6. Belegketten-Rückwärtsverknüpfung als `Mapper.post_run()` (entspricht `apply_document_links`).
+7. Schlussphasen `apply_wc_blocks` (gesperrte Kunden/Artikel) als eigener Nachlauf.
 
 Offene Design-Punkte, die beim Mapper-Bau zu klären sind: siehe "Offene technische Fragen".
 

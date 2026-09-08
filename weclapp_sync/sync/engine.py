@@ -168,8 +168,11 @@ def run_sync(mode: str, *, run_name: str | None = None) -> RunResult:
 
 def run_full_import(run_name: str | None = None) -> dict:
 	"""Entry point für den "Vollimport"-Button / Background-Job."""
-	# TODO(setup): vor den Objekttyp-Mappern die setup_*()-Äquivalente aus reference/setup.py
-	# laufen lassen (Konten, Lager, Geschäftsjahre, Custom Fields, ...). Siehe CLAUDE.md Punkt 3.
+	from weclapp_sync.setup.runner import run_setup
+
+	# Struktur/Stammdaten vor den Objekttyp-Mappern (Custom Fields, Naming; die
+	# datenintensiven setup_*()-Äquivalente sind noch TODO, siehe runner.py).
+	run_setup(full=True)
 	res = run_sync(MODE_FULL, run_name=run_name)
 	return _result_payload(res)
 

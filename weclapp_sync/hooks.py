@@ -29,18 +29,8 @@ scheduler_events = {
 }
 
 # ---------------------------------------------------------------------------
-# Installation
+# Installation / Migration
 # ---------------------------------------------------------------------------
 after_install = "weclapp_sync.install.after_install"
-
-# ---------------------------------------------------------------------------
-# Fixtures (Custom Fields etc., die der Sync auf ERPNext-Standard-Doctypes braucht -
-# z.B. wc_id / wc_last_synced auf Customer, Item, Sales Invoice, ...)
-# TODO: befüllen, sobald die Mapper feststehen (siehe reference/setup.py Custom-Field-Teil).
-# ---------------------------------------------------------------------------
-fixtures = [
-	{
-		"dt": "Custom Field",
-		"filters": [["name", "like", "%-wc_%"]],
-	},
-]
+# Custom Fields + autoname=Prompt-Property-Setter idempotent nachziehen.
+after_migrate = "weclapp_sync.setup.runner.run_setup"

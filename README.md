@@ -42,21 +42,22 @@ starten"; für den laufenden Betrieb „Automatischen Delta-Sync aktivieren".
 
 ## Stand (2026-09-08)
 
-**Increment 1 fertig – App-Gerüst + Unterbau, noch keine Feld-Mapper.**
+**Increment 1 + 2: App-Gerüst, Unterbau, Setup-Layer, erster (reduzierter) Kunden-Mapper.**
 
 | Bereich | Status |
 |---|---|
 | Frappe-App-Grundgerüst (`pyproject.toml`, `hooks.py`, `modules.txt`, `install.py`) | ✅ |
-| Read-only WeClapp-Client (`weclapp_sync/weclapp/`) – GET-only hart erzwungen, `iter_pages()`/`iter_all()` als Generatoren (kein Cache-all), `lastModifiedDate`-Delta-Filter, streamender Dokument-Download | ✅ |
-| WeClapp `lastModifiedDate`-Serverfilter | ✅ live verifiziert (siehe CLAUDE.md) |
-| Doctypes: **WeClapp Settings** (Single), **WeClapp Sync Object Type** (Child), **WeClapp Sync Run** (+ Child), **WeClapp Sync Log** | ✅ |
-| Sync-Engine (`weclapp_sync/sync/engine.py`) – gemeinsamer Unterbau Vollimport/Delta, seitenweises Verarbeiten + Commit pro Seite, Savepoint + Weiterlauf pro Datensatz, resumierbarer Seiten-Cursor, Fehler-Log pro Datensatz | ✅ Grundgerüst |
-| Scheduler-Anbindung (`weclapp_sync/sync/scheduler.py`) – Cron-Tick enqueued nur den Job, Stale-Recovery | ✅ |
-| Objekttyp-Registry + feste Reihenfolge (`weclapp_sync/sync/registry.py`) | ✅ Gerüst, **0 Typen registriert** |
-| **Feld-Mapper pro Objekttyp** (Portierung aus `reference/migration_logic/`) | ❌ ausstehend |
-| `setup_*()`-Äquivalente für den Vollimport (Konten, Lager, Custom Fields …, aus `reference/setup.py`) | ❌ ausstehend |
-| Mapping-Standardwerte im Settings-Formular (aus `reference/config_example.py`) | ❌ ausstehend |
-| Custom Fields (`wc_id`/`wc_last_synced` auf ERPNext-Doctypes) als Fixtures | ❌ ausstehend |
+| Read-only WeClapp-Client – GET-only hart erzwungen, `iter_pages()`/`iter_all()` als Generatoren (kein Cache-all), `lastModifiedDate`-Delta-Filter, streamender Dokument-Download | ✅ live gegen echte API getestet (Paginierung + Delta) |
+| Doctypes: **WeClapp Settings** (Single, inkl. Mapping-Standardwerte), **WeClapp Sync Object Type** (Child), **WeClapp Sync Run** (+ Child), **WeClapp Sync Log** | ✅ |
+| Sync-Engine – Unterbau Vollimport/Delta, seitenweise + Commit pro Seite, Savepoint + Weiterlauf pro Datensatz, resumierbarer Seiten-Cursor, Fehler-Log pro Datensatz | ✅ Grundgerüst |
+| Scheduler-Anbindung – Cron-Tick enqueued nur den Job, Stale-Recovery | ✅ |
+| Setup-Layer (`weclapp_sync/setup/`) – Custom Fields (`wc_id`/`wc_last_modified` + `wc_opt_in_*`/`wc_zahlungsart`/`wc_fax`), `autoname=Prompt`-Property-Setter; läuft bei `after_install`/`after_migrate` und vor dem Vollimport | ✅ |
+| `erpnext_helpers.py` – Port von `en_helper.py` (Datum, Telefon, HTML-Strip, Territory, Country, UOM) | ✅ |
+| Objekttyp-Registry + feste Reihenfolge | ✅ – **1 von 14 Typen registriert (Kunden)** |
+| **Kunden-Mapper** – Kern-`Customer`-Dokument (Name, Gruppe, Typ, Währung, USt-IdNr., Notiz, Opt-Ins, `wc_id`) | ⚠️ reduziert – **ohne Adressen, Kontakte, Bankkonten, Personenkonto, Zusatzfelder** (jeweils eigener Folge-Schritt) |
+| Übrige Mapper (Lieferant, Artikel, Rechnung, Auftrag, Zahlung, …) | ❌ ausstehend |
+| Datenintensive `setup_*()`-Äquivalente (Konten, Lager, Geschäftsjahre, Zahlungsbedingungen, Personenkonten, …) | ❌ ausstehend |
 
-Nächster Schritt: ersten Mapper (Kunden) portieren und in der Registry aktivieren.
+Nächster Schritt: Kunden-Mapper vervollständigen (Adressen + Kontakte, wg. E-Mail/Telefon-Abdeckung
+im Altbestand kritisch), dann Lieferanten- und Artikel-Mapper.
 Details, Architektur-Plan und offene Fragen: `CLAUDE.md`.

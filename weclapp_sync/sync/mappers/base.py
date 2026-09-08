@@ -24,6 +24,10 @@ class Mapper:
 	# Von Unterklassen zu setzen:
 	target_doctype: str = ""
 
+	# True, wenn für target_doctype autoname="Prompt" gesetzt ist (siehe
+	# weclapp_sync/setup/naming.py) und target_name() als Dokument-ID verwendet werden soll.
+	forces_name: bool = True
+
 	# --------------------------------------------------------------- zu implementieren
 	def target_name(self, record: dict) -> str | None:
 		"""Deterministischer ERPNext-Dokumentname für diesen WeClapp-Datensatz.
@@ -52,17 +56,30 @@ class Mapper:
 		if name is None:
 			return None
 
-		existing = None
-		if frappe.db.exists(self.target_doctype, name):
-			existing = frappe.get_doc(self.target_doctype, name)
+		wc_id = str(record.get("id") or "")
 
-		fields = self.to_doc_fields(record, existing=existing)
+		# Bestehendes Dokument finden: zuerst über das wc_id-Custom-Field (überlebt auch
+		# umbenannte ERPNext-Dokumente), dann über den deterministischen Namen.
+		existing_name = None
+		if wc_id:
+			existing_name = frappe.db.exists(self.target_doctype, {"wc_id": wc_id})
+		if not existing_name and name:
+			existing_name = frappe.db.exists(self.target_doctype, name)
+
+		existing = frappe.get_doc(self.target_doctype, existing_name) if existing_name else None
+		fields = dict(self.to_doc_fields(record, existing=existing))
+		if wc_id:
+			fields.setdefault("wc_id", wc_id)
+		if record.get("lastModifiedDate"):
+			fields.setdefault("wc_last_modified", str(record["lastModifiedDate"]))
 
 		if existing is None:
 			doc = frappe.new_doc(self.target_doctype)
 			doc.update(fields)
+			if self.forces_name and name:
+				doc.name = name
 			doc.flags.ignore_permissions = True
-			doc.insert()
+			doc.insert(set_name=name if (self.forces_name and name) else None)
 			return doc.name
 
 		existing.update(fields)
