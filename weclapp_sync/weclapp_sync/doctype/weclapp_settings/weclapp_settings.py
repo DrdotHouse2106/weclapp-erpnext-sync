@@ -212,7 +212,7 @@ class WeClappSettings(Document):
 			out += "\n" + "\n".join(created)
 		if skipped:
 			out += f"\n\nÜbersprungen ({len(skipped)}):\n" + "\n".join(skipped)
-		out += "\n\nJetzt „Steuer-Mapping aus WeClapp befüllen" erneut klicken."
+		out += "\n\nJetzt 'Steuer-Mapping aus WeClapp befuellen' erneut klicken."
 		return out
 
 	@frappe.whitelist()
