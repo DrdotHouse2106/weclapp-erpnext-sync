@@ -145,7 +145,6 @@ class WeClappSettings(Document):
 		Aufgelöst über die Kontonummer im ERPNext-Kontenplan. Fehlt eine, bleibt das Feld leer
 		und die Nummer landet in der Rückmeldung."""
 		taxes = self._fetch_wc_taxes()
-		by_id = {row.wc_tax_id: row for row in self.tax_mappings}
 		company = self.company
 		missing: dict[str, str] = {}
 
@@ -155,9 +154,16 @@ class WeClappSettings(Document):
 			f = {"account_number": number, "company": company} if company else {"account_number": number}
 			return frappe.db.get_value("Account", f, "name")
 
+		# Nur Steuern mit mindestens einem in WeClapp hinterlegten Konto bekommen eine Zeile -
+		# der Rest (ausländische Sätze, die FranceTec nie konfiguriert hat) wäre nur Rauschen.
+		configured = {
+			str(t["id"]): t for t in taxes if any(t.get(f) for f in _TAX_FIELD_MAP)
+		}
+		self.tax_mappings = [r for r in self.tax_mappings if r.wc_tax_id in configured]
+		by_id = {row.wc_tax_id: row for row in self.tax_mappings}
+
 		added = 0
-		for t in taxes:
-			tid = str(t.get("id"))
+		for tid, t in sorted(configured.items(), key=lambda kv: kv[1].get("name") or ""):
 			is_purchase = _is_purchase_tax(t)
 			nm = t.get("name") or ""
 			row = by_id.get(tid)
@@ -193,8 +199,9 @@ class WeClappSettings(Document):
 
 		self.save()
 		msg = (
-			f"{len(taxes)} WeClapp-Steuern verarbeitet, {added} neue Zeilen. "
-			"Alle Kontospalten wurden aus WeClapp neu abgeleitet."
+			f"{len(configured)} WeClapp-Steuern mit hinterlegten Konten (von {len(taxes)} gesamt), "
+			f"{added} neue Zeilen. Alle Kontospalten wurden aus WeClapp neu abgeleitet, "
+			"Steuern ohne Konten entfernt."
 		)
 		if missing:
 			lst = ", ".join(f"{n} ({d})" for n, d in sorted(missing.items()))
