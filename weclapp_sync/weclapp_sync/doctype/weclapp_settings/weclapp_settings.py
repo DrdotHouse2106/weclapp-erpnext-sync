@@ -126,25 +126,32 @@ class WeClappSettings(Document):
 		added = 0
 		for channel in channels:
 			is_gross = channel.upper().startswith("GROSS")
-			list_name = f"WeClapp {channel}"
-			if not frappe.db.exists("Price List", list_name):
-				pl = frappe.new_doc("Price List")
-				pl.price_list_name = list_name
-				pl.selling = 1
-				pl.currency = self.default_currency or "EUR"
-				pl.flags.ignore_permissions = True
-				pl.insert()
-
 			row = by_channel.get(channel)
 			if row is None:
 				row = self.append("price_list_mappings", {})
 				row.sales_channel = channel
-				row.price_list = list_name
 				added += 1
 			row.prices_include_tax = 1 if is_gross else 0
 
+			# Preisliste nur anlegen, wenn die Zeile noch keine hat. Name = Bezeichnung (falls
+			# gesetzt) sonst "WeClapp <Code>". Eine schon eingetragene Preisliste bleibt unangetastet.
+			if not row.price_list:
+				list_name = (row.channel_label or "").strip() or f"WeClapp {channel}"
+				if not frappe.db.exists("Price List", list_name):
+					pl = frappe.new_doc("Price List")
+					pl.price_list_name = list_name
+					pl.selling = 1
+					pl.currency = self.default_currency or "EUR"
+					pl.flags.ignore_permissions = True
+					pl.insert()
+				row.price_list = list_name
+
 		self.save()
-		return f"{len(channels)} Preiskanäle, {added} neue Zeilen."
+		return (
+			f"{len(channels)} Preiskanäle, {added} neue Zeilen. "
+			"Tipp: Bezeichnung eintragen und den Button erneut klicken, dann heißt die neu "
+			"angelegte Preisliste so."
+		)
 
 	@frappe.whitelist()
 	def start_full_import(self):

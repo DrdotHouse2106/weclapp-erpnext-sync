@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "sales_channel",
+  "channel_label",
   "enabled",
   "column_break_1",
   "price_list",
@@ -13,12 +14,20 @@
  ],
  "fields": [
   {
-   "columns": 2,
+   "columns": 1,
    "fieldname": "sales_channel",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "WeClapp Preiskanal",
+   "label": "WC-Code",
    "read_only": 1
+  },
+  {
+   "columns": 3,
+   "description": "Dein Name für diesen Kanal (steht nicht in der WeClapp-API). Wird beim Button-Klick als Name der neu angelegten Preisliste verwendet.",
+   "fieldname": "channel_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bezeichnung"
   },
   {
    "columns": 1,
@@ -33,8 +42,8 @@
    "fieldtype": "Column Break"
   },
   {
-   "columns": 4,
-   "description": "ERPNext-Preisliste, in die die Preise dieses Kanals geschrieben werden.",
+   "columns": 3,
+   "description": "ERPNext-Preisliste, in die die Preise dieses Kanals geschrieben werden. Du kannst hier auch eine bestehende Preisliste wählen.",
    "fieldname": "price_list",
    "fieldtype": "Link",
    "in_list_view": 1,
