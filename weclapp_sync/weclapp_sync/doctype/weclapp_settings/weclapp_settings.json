@@ -25,6 +25,8 @@
   "section_full_import",
   "full_import_help",
   "run_full_import",
+  "section_debug",
+  "debug_max_pages_per_type",
   "section_mapping_defaults",
   "mapping_defaults_help",
   "company",
@@ -154,6 +156,19 @@
    "fieldname": "run_full_import",
    "fieldtype": "Button",
    "label": "Vollimport jetzt starten"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_debug",
+   "fieldtype": "Section Break",
+   "label": "Debug / Test"
+  },
+  {
+   "default": "0",
+   "description": "Nur zum Testen: max. Anzahl WeClapp-Seiten pro Objekttyp und Lauf (0 = unbegrenzt). Bei page_size=100 heißt 2 also die ersten 200 Datensätze.",
+   "fieldname": "debug_max_pages_per_type",
+   "fieldtype": "Int",
+   "label": "Max. Seiten pro Objekttyp"
   },
   {
    "fieldname": "section_mapping_defaults",

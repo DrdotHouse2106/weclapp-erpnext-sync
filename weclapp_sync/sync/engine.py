@@ -96,12 +96,18 @@ def sync_object_type(
 	if row.progress_run == run_name and (row.progress_page or 0) > 0:
 		start_page = int(row.progress_page) + 1
 
+	max_pages = int(get_settings().debug_max_pages_per_type or 0)
+	truncated = False
+
 	try:
 		page_no = 0
 		for page in client.iter_pages(spec.weclapp_doctype, filters=filters, sort=spec.sort):
 			page_no += 1
 			if page_no < start_page:
 				continue
+			if max_pages and page_no > max_pages:
+				truncated = True
+				break
 
 			for idx, record in enumerate(page):
 				# Savepoint pro Datensatz: schlägt einer fehl, wird nur SEIN Teil
@@ -122,6 +128,13 @@ def sync_object_type(
 
 			frappe.db.commit()
 			_save_progress(spec.key, run_name, page_no)
+
+		if truncated:
+			# Test-Lauf mit Seitenbegrenzung: KEIN Watermark setzen (Typ ist nicht
+			# vollständig), Fortschritt aber behalten, damit ein Folgelauf weitermacht.
+			result.status = "truncated"
+			result.message = f"nach {max_pages} Seite(n) abgeschnitten (debug_max_pages_per_type)"
+			return result
 
 		mapper.post_run()
 		frappe.db.commit()
