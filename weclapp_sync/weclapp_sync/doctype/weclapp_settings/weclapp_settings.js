@@ -18,6 +18,18 @@ frappe.ui.form.on("WeClapp Settings", {
 		});
 	},
 
+	populate_tax_mappings(frm) {
+		frm.call({
+			doc: frm.doc,
+			method: "populate_tax_mapping",
+			freeze: true,
+			freeze_message: __("Hole WeClapp-Steuern …"),
+		}).then((r) => {
+			frm.reload_doc();
+			frappe.show_alert({ message: r.message, indicator: "green" });
+		});
+	},
+
 	refresh_object_types(frm) {
 		frm.call({ doc: frm.doc, method: "refresh_object_type_list", freeze: true }).then((r) => {
 			frm.reload_doc();

@@ -58,6 +58,51 @@ class WeClappSettings(Document):
 		return "Objekttyp-Liste aktualisiert."
 
 	@frappe.whitelist()
+	def populate_tax_mapping(self):
+		"""Holt die WeClapp-`tax`-Liste (read-only) und legt/aktualisiert je eine Zeile an.
+		Konten werden über die WeClapp-Kontonummern (`defaultNominalAccountNumber` = Erlös,
+		`accountNumber` = USt/VSt) automatisch aufgelöst, sofern im ERPNext-Kontenplan
+		vorhanden - sonst bleibt das Feld leer und muss geprüft werden."""
+		from weclapp_sync.sync.settings import get_client
+
+		client = get_client()
+		client.open()
+		try:
+			taxes = list(client.iter_all("tax"))
+		finally:
+			client.close()
+
+		by_id = {row.wc_tax_id: row for row in self.tax_mappings}
+		company = self.company
+
+		def _acc(number: str | None, root_type: str | None = None) -> str | None:
+			if not number:
+				return None
+			filters = {"account_number": number, "company": company} if company else {"account_number": number}
+			return frappe.db.get_value("Account", filters, "name")
+
+		added = 0
+		for t in taxes:
+			tid = str(t.get("id"))
+			row = by_id.get(tid)
+			if row is None:
+				row = self.append("tax_mappings", {})
+				row.wc_tax_id = tid
+				added += 1
+			row.wc_tax_name = t.get("name")
+			try:
+				row.wc_rate = float(t.get("taxValue") or 0)
+			except (TypeError, ValueError):
+				row.wc_rate = 0
+			if not row.income_account:
+				row.income_account = _acc(t.get("defaultNominalAccountNumber"))
+			if not row.tax_account:
+				row.tax_account = _acc(t.get("accountNumber"))
+
+		self.save()
+		return f"{len(taxes)} WeClapp-Steuern verarbeitet, {added} neue Zeilen."
+
+	@frappe.whitelist()
 	def start_full_import(self):
 		"""Enqueued den Vollimport als langlaufenden Background-Job."""
 		if not self.enabled:

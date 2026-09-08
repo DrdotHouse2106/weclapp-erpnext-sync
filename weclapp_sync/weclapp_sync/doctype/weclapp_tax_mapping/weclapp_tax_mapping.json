@@ -1,0 +1,84 @@
+{
+ "actions": [],
+ "creation": "2026-09-08 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "wc_tax_id",
+  "wc_tax_name",
+  "wc_rate",
+  "column_break_1",
+  "income_account",
+  "expense_account",
+  "tax_account"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "wc_tax_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "WeClapp Tax ID",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "wc_tax_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "WeClapp Steuer",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "wc_rate",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Satz",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 2,
+   "description": "Erlöskonto (Verkauf). Leer = Standard-Erlöskonto der Firma.",
+   "fieldname": "income_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Erlöskonto",
+   "options": "Account"
+  },
+  {
+   "columns": 2,
+   "description": "Aufwandskonto (Einkauf).",
+   "fieldname": "expense_account",
+   "fieldtype": "Link",
+   "label": "Aufwandskonto",
+   "options": "Account"
+  },
+  {
+   "columns": 2,
+   "description": "USt-/VSt-Konto. Leer = steuerfrei (keine Steuerzeile).",
+   "fieldname": "tax_account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Steuerkonto",
+   "options": "Account"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WeClapp Sync",
+ "name": "WeClapp Tax Mapping",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

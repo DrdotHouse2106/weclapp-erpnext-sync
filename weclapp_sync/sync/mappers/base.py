@@ -67,6 +67,18 @@ class Mapper:
 		"""Optionaler Vorfilter (z.B. Null-Rechnungen). Standard: nichts überspringen."""
 		return False
 
+	def find_existing(self, record: dict, name: str | None) -> str | None:
+		"""Name eines bestehenden Zieldokuments: zuerst über das `wc_id`-Custom-Field
+		(überlebt Umbenennungen), dann über den deterministischen Namen."""
+		wc_id = str(record.get("id") or "")
+		if wc_id:
+			hit = frappe.db.exists(self.target_doctype, {"wc_id": wc_id})
+			if hit:
+				return hit
+		if name:
+			return frappe.db.exists(self.target_doctype, name)
+		return None
+
 	def upsert(self, record: dict) -> str | None:
 		"""Legt das Zieldokument an oder aktualisiert es. Gibt den Dokumentnamen zurück,
 		oder None wenn übersprungen. Exceptions werden bewusst nicht hier gefangen -
@@ -79,15 +91,7 @@ class Mapper:
 			return None
 
 		wc_id = str(record.get("id") or "")
-
-		# Bestehendes Dokument finden: zuerst über das wc_id-Custom-Field (überlebt auch
-		# umbenannte ERPNext-Dokumente), dann über den deterministischen Namen.
-		existing_name = None
-		if wc_id:
-			existing_name = frappe.db.exists(self.target_doctype, {"wc_id": wc_id})
-		if not existing_name and name:
-			existing_name = frappe.db.exists(self.target_doctype, name)
-
+		existing_name = self.find_existing(record, name)
 		existing = frappe.get_doc(self.target_doctype, existing_name) if existing_name else None
 		fields = dict(self.to_doc_fields(record, existing=existing))
 		if wc_id:

@@ -135,17 +135,34 @@ Fertig:
 Noch offen am Artikel-Mapper: Bezugsquellen (`supplySources` -> Item Supplier /
 item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
 
-Als Nächstes (Reihenfolge):
-1. `apply_wc_blocks` (blocked/insolvent/orderBlock/`article.active` -> disabled/is_frozen) als
-   Schlussphase-Nachlauf.
-2. `setup_*()`-Äquivalente in `setup/runner.py` (`full=True`): Payment Terms Templates
-   (`_parse_wc_payment_term` aus reference/setup.py), Fiscal Years 2023-2025, Warehouses,
-   Cost Center, Tax-Templates - **Voraussetzung für die Transaktions-Mapper**.
-3. Transaktions-Mapper in `SYNC_ORDER`: quotation, sales_order, sales_invoice, sales_payment,
-   shipment, purchase_order, purchase_invoice, purchase_payment. Steuer-/Zahlungslogik aus
-   `reference/.../base_migration.py` (`_add_tax`/`_map_taxes`/`_map_net_rate`) + der CLAUDE.md
-   des Vorgängerprojekts (gelöste Fachprobleme).
-4. `crm_event`, `stock_movement`.
+### Increment 7: Setup-Masters, Steuer-Mapping, Belegs-Grundlage, Angebots-Mapper
+- **Erster voller Kunden-Import: 5830 Kunden, 0 Fehler** (WC-SYNC-00004). ~5000 Personenkonten,
+  6227 Adressen, 4721 Kontakte. Kleine Sub-Fehler im Error Log (`_guarded`).
+- **Bug gefixt:** `WeClapp Sync Object Type.last_sync_ms` war `Int` -> Epoch-ms (~1.75e12)
+  sprengt MySQL-INT (`DataError 1264`). Jetzt `Data` (String). `_finish_type` schreibt `str()`.
+  → Watermark von WC-SYNC-00004 wurde nicht gesetzt; ein Re-Run (idempotent) holt das nach.
+- `setup/masters.py`: `setup_payment_terms` / `setup_fiscal_years` / `setup_uom_settings`.
+- **Steuer-Mapping**: Doctype `WeClapp Tax Mapping` (Child von Settings, `tax_mappings`).
+  Button "Steuer-Mapping aus WeClapp befüllen" (`populate_tax_mapping`) holt WeClapp `tax`
+  (243 Stück) und löst Konten über die WeClapp-Kontonummern auf: `defaultNominalAccountNumber`
+  = Erlöskonto, `accountNumber` = USt/VSt-Konto -> ERPNext `Account.account_number`.
+  Instanz-Kontenplan ist Teilmenge -> nicht auflösbare Felder bleiben leer (Nutzer prüft).
+  Settings-Felder: `default_income_/expense_account`, `default_cost_center`,
+  `default_sales_/purchase_taxes_template`, `submit_documents`.
+- `sync/mappers/_transaction.py` (`TransactionMapper`): `net_rate` (aus `netAmount`, nicht
+  `unitPrice`!), `build_lines` (Positionen + Steuer-Akkumulation), `build_tax_rows`
+  ("Actual"-Zeilen, Cent-genau), `header_discount_amount`, `ensure_customer` (Minimal-Kunde
+  für gelöschte WeClapp-Parteien). `Mapper.find_existing()` extrahiert (wc_id -> Name).
+- `sync/mappers/quotation.py` (`QuotationMapper`, registriert, 4/14): `AN-<nr>`, Positionen,
+  Steuern, Kopfrabatt, optional submit.
+
+Als Nächstes:
+1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping-Button + Konten/Templates/
+   Kostenstelle in Settings prüfen; Kunden-Delta einmal re-runnen (setzt Watermark).
+2. Angebots-Import testen, dann `sales_order` + `sales_invoice` (+ `payment_entry` aus
+   `salesOpenItem`), dann Einkaufsseite. Steuerlogik in `_transaction.py` ist da, muss aber
+   gegen echte Belege verifiziert werden (Vorgängerprojekt-CLAUDE.md: gelöste Fälle).
+3. `apply_wc_blocks`, `crm_event`, `stock_movement`, `shipment`, Belegketten (`post_run`).
 3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
 4. Für Personenkonten/Konten/Lager/Zahlungsbedingungen die fehlenden `setup_*()`-Äquivalente in
    `weclapp_sync/setup/runner.py` (`full=True`-Zweig) ergänzen - vor den abhängigen Mappern.

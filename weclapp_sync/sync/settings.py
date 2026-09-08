@@ -35,3 +35,17 @@ def get_object_type_row(key: str):
 		if row.object_type == key:
 			return row
 	return None
+
+
+def tax_mapping() -> dict:
+	"""{wc_tax_id: {income_account, expense_account, tax_account, rate, name}} aus den Settings."""
+	out: dict = {}
+	for row in get_settings().tax_mappings:
+		out[str(row.wc_tax_id)] = {
+			"income_account": row.income_account or None,
+			"expense_account": row.expense_account or None,
+			"tax_account": row.tax_account or None,
+			"rate": float(row.wc_rate or 0),
+			"name": row.wc_tax_name or "",
+		}
+	return out

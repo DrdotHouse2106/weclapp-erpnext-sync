@@ -43,7 +43,17 @@
   "default_buying_price_list",
   "section_accounts",
   "debtor_parent_account",
-  "creditor_parent_account"
+  "creditor_parent_account",
+  "section_tax",
+  "submit_documents",
+  "default_income_account",
+  "default_expense_account",
+  "default_cost_center",
+  "column_break_tax",
+  "default_sales_taxes_template",
+  "default_purchase_taxes_template",
+  "populate_tax_mappings",
+  "tax_mappings"
  ],
  "fields": [
   {
@@ -284,6 +294,66 @@
    "fieldtype": "Link",
    "label": "Kreditoren-Sammelgruppe",
    "options": "Account"
+  },
+  {
+   "fieldname": "section_tax",
+   "fieldtype": "Section Break",
+   "label": "Steuer & Konten (Belege)"
+  },
+  {
+   "default": "0",
+   "description": "Wenn aktiv, werden migrierte Belege (Angebot/Auftrag/Rechnung/...) direkt gebucht (submitted) statt als Entwurf.",
+   "fieldname": "submit_documents",
+   "fieldtype": "Check",
+   "label": "Belege buchen (submit)"
+  },
+  {
+   "description": "Fallback-Erlöskonto, wenn im Steuer-Mapping keins gesetzt ist.",
+   "fieldname": "default_income_account",
+   "fieldtype": "Link",
+   "label": "Standard-Erlöskonto",
+   "options": "Account"
+  },
+  {
+   "fieldname": "default_expense_account",
+   "fieldtype": "Link",
+   "label": "Standard-Aufwandskonto",
+   "options": "Account"
+  },
+  {
+   "fieldname": "default_cost_center",
+   "fieldtype": "Link",
+   "label": "Standard-Kostenstelle",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "column_break_tax",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Sales Taxes and Charges Template als Rahmen auf jedem Verkaufsbeleg (die echten Beträge kommen als \"Actual\"-Zeilen aus dem Steuer-Mapping).",
+   "fieldname": "default_sales_taxes_template",
+   "fieldtype": "Link",
+   "label": "Verkaufssteuer-Vorlage",
+   "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "fieldname": "default_purchase_taxes_template",
+   "fieldtype": "Link",
+   "label": "Einkaufssteuer-Vorlage",
+   "options": "Purchase Taxes and Charges Template"
+  },
+  {
+   "fieldname": "populate_tax_mappings",
+   "fieldtype": "Button",
+   "label": "Steuer-Mapping aus WeClapp befüllen"
+  },
+  {
+   "description": "WeClapp-Steuer -> ERPNext-Konten. Über den Button vorbefüllt (Kontonummern aus WeClapp), danach prüfen/ergänzen.",
+   "fieldname": "tax_mappings",
+   "fieldtype": "Table",
+   "label": "Steuer-Mapping",
+   "options": "WeClapp Tax Mapping"
   }
  ],
  "index_web_pages_for_search": 1,

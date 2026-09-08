@@ -296,7 +296,7 @@ def _finish_type(key: str, watermark_ms: int) -> None:
 		"WeClapp Sync Object Type",
 		{"parent": "WeClapp Settings", "object_type": key},
 		{
-			"last_sync_ms": watermark_ms,
+			"last_sync_ms": str(int(watermark_ms)),  # Data-Feld (Epoch ms sprengt MySQL-INT)
 			"last_sync_at": now_datetime(),
 			"progress_run": None,
 			"progress_page": 0,

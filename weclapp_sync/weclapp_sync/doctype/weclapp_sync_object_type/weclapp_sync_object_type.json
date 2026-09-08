@@ -53,9 +53,9 @@
    "read_only": 1
   },
   {
-   "description": "WeClapp lastModifiedDate (epoch ms) des letzten erfolgreichen Laufs - Grundlage für den Delta-Filter.",
+   "description": "WeClapp lastModifiedDate (epoch ms) des letzten erfolgreichen Laufs - Grundlage für den Delta-Filter. Data statt Int: der Wert (~1.75e12) sprengt MySQL-INT.",
    "fieldname": "last_sync_ms",
-   "fieldtype": "Int",
+   "fieldtype": "Data",
    "label": "Watermark (epoch ms)",
    "read_only": 1
   },

@@ -128,3 +128,14 @@ register(
 		mapper_path="weclapp_sync.sync.mappers.article:ArticleMapper",
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="quotation",
+		label="Angebote",
+		weclapp_doctype=WeClappDocType.QUOTATION,
+		target_doctype="Quotation",
+		mapper_path="weclapp_sync.sync.mappers.quotation:QuotationMapper",
+		depends_on=("customer", "article"),
+	)
+)
