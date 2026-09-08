@@ -48,15 +48,20 @@ frappe.ui.form.on("WeClapp Settings", {
 	},
 
 	populate_tax_mappings(frm) {
-		frm.call({
-			doc: frm.doc,
-			method: "populate_tax_mapping",
-			freeze: true,
-			freeze_message: __("Hole WeClapp-Steuern …"),
-		}).then((r) => {
-			frm.reload_doc();
-			frappe.msgprint({ title: __("Steuer-Mapping"), message: (r.message || "").replace(/\n/g, "<br>"), indicator: "blue" });
-		});
+		frappe.confirm(
+			__("Alle Kontospalten im Steuer-Mapping werden aus WeClapp neu abgeleitet (manuelle Änderungen gehen verloren). Fortfahren?"),
+			() => {
+				frm.call({
+					doc: frm.doc,
+					method: "populate_tax_mapping",
+					freeze: true,
+					freeze_message: __("Hole WeClapp-Steuern …"),
+				}).then((r) => {
+					frm.reload_doc();
+					frappe.msgprint({ title: __("Steuer-Mapping"), message: (r.message || "").replace(/\n/g, "<br>"), indicator: "blue" });
+				});
+			}
+		);
 	},
 
 	refresh_object_types(frm) {

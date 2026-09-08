@@ -171,16 +171,20 @@ class WeClappSettings(Document):
 			except (TypeError, ValueError):
 				row.wc_rate = 0
 
+			# Kontospalten immer frisch aus WeClapp ableiten (WeClapp ist maßgeblich).
+			row.income_account = None
+			row.expense_account = None
+			row.tax_account = None
+			row.contra_account = None
+			row.discount_account = None
+
 			for wc_field, target_field in _TAX_FIELD_MAP.items():
 				num = t.get(wc_field)
 				if not num:
 					continue
-				# Buchungskonto: bei Einkauf -> expense_account, bei Verkauf -> income_account
 				tf = target_field
 				if wc_field == "defaultNominalAccountNumber":
 					tf = "expense_account" if is_purchase else "income_account"
-				if getattr(row, tf, None):
-					continue
 				resolved = _acc(num)
 				if resolved:
 					setattr(row, tf, resolved)
@@ -188,7 +192,10 @@ class WeClappSettings(Document):
 					missing[num] = nm
 
 		self.save()
-		msg = f"{len(taxes)} WeClapp-Steuern verarbeitet, {added} neue Zeilen."
+		msg = (
+			f"{len(taxes)} WeClapp-Steuern verarbeitet, {added} neue Zeilen. "
+			"Alle Kontospalten wurden aus WeClapp neu abgeleitet."
+		)
 		if missing:
 			lst = ", ".join(f"{n} ({d})" for n, d in sorted(missing.items()))
 			msg += (
