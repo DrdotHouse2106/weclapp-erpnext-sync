@@ -19,6 +19,32 @@ from weclapp_sync import erpnext_helpers as h
 _SALUTATION_MAP = {"MR": "Mr", "MRS": "Mrs"}
 
 
+def display_name(record: dict) -> str:
+	"""WeClapp-Anzeigename: Firma bei ORGANIZATION, sonst Vor-/Nachname."""
+	if record.get("partyType") != "PERSON":
+		return (record.get("company") or "").strip()
+	return f"{record.get('firstName') or ''} {record.get('lastName') or ''}".strip()
+
+
+def block_notice(value: str | None) -> str | None:
+	value = (value or "").strip()
+	return f"Sperrgrund: {value}" if value else None
+
+
+def purpose_email(party: dict, purpose_field: str) -> str | None:
+	"""Löst eine belegart-spezifische E-Mail-Adresse auf (party.<purpose>EmailAddressesId ->
+	partyEmailAddresses[].toAddresses). WeClapp führt getrennte Adressen für Rechnung,
+	Auftragsbestätigung, Lieferschein, Mahnung, Angebot, Bestellung - selten gesetzt,
+	aber wenn, dann maßgeblich."""
+	target_id = party.get(purpose_field)
+	if not target_id:
+		return None
+	for entry in party.get("partyEmailAddresses") or []:
+		if entry.get("id") == target_id:
+			return entry.get("toAddresses") or None
+	return None
+
+
 # --------------------------------------------------------------------------- Dynamic Link
 def ensure_dynamic_link(doc, link_doctype: str, link_name: str) -> None:
 	"""Fügt dem `links`-Child (Dynamic Link) eine Verknüpfung hinzu, falls noch nicht vorhanden."""
@@ -218,7 +244,7 @@ def bank_account_is_valid(wc_ba: dict) -> bool:
 
 
 def upsert_bank_account(
-	wc_ba: dict, *, party_doctype: str, party_name: str
+	wc_ba: dict, *, party_doctype: str, party_name: str, account_type: str | None = None
 ) -> str | None:
 	"""Legt/aktualisiert ein ERPNext Bank Account für ein WeClapp-Bankkonto an, verknüpft mit
 	der Partei. Idempotent über `wc_id`. Portiert aus reference bank_account_migration.py."""
@@ -240,8 +266,8 @@ def upsert_bank_account(
 		"wc_id": wc_id or None,
 	}
 	# Bank Account Type ist optional - nur setzen, wenn im System vorhanden.
-	if frappe.db.exists("Bank Account Type", "Kunden-Bankkonto"):
-		fields["account_type"] = "Kunden-Bankkonto"
+	if account_type and frappe.db.exists("Bank Account Type", account_type):
+		fields["account_type"] = account_type
 
 	name = frappe.db.exists("Bank Account", {"wc_id": wc_id}) if wc_id else None
 	doc = frappe.get_doc("Bank Account", name) if name else frappe.new_doc("Bank Account")

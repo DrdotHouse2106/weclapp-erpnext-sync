@@ -109,10 +109,20 @@ Fertig:
   landen auf dem Sammelkonto (WeClapp bleibt Quelle - dort Debitor-Nr. nachtragen).
   partyType: 768 ORGANIZATION + 5534 PERSON.
 
+### Increment 5: Lieferanten-Mapper + Refactoring
+- `sync/mappers/supplier.py` (`SupplierMapper`, registriert) - analog zu customer.py:
+  Supplier-Kerndoc + Adressen + Kontakte + self-Kontakt + Bankkonten + Kreditorenkonto
+  (Payable, `party.supplierCreditorAccountNumber`, Bereich 70000+) + `purchase_email`
+  (`party.purchaseEmailAddressesId`). Kein Territory, kein opt_in, eine `default_supplier_group`.
+- Gemeinsame Helfer nach `_party_common.py` gezogen: `display_name`, `block_notice`,
+  `purpose_email`. `upsert_bank_account(account_type=...)` parametrisiert.
+- Erster **voller Kunden-Import** (WC-SYNC-00004) gestartet: bei 1700/5838 sauber, 0 Fehler.
+
 Als Nächstes (Reihenfolge):
-1. Kunden-Mapper: Custom Attributes (Zusatzfelder, braucht `customAttributeDefinition`-Abruf) +
-   `apply_wc_blocks` (blocked/insolvent -> disabled/is_frozen als Schlussphase).
-2. **Lieferanten-Mapper** (`supplier_migration.py`, weitgehend analog zu Kunden).
+1. Custom Attributes (Zusatzfelder) für Kunde+Lieferant - braucht `customAttributeDefinition`-
+   Abruf (einmal pro Lauf cachen). Feldnamen via `erpnext_helpers.custom_fieldname`.
+2. `apply_wc_blocks` (blocked/insolvent/orderBlock -> disabled/is_frozen) als Schlussphase.
+3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
 3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
 4. Für Personenkonten/Konten/Lager/Zahlungsbedingungen die fehlenden `setup_*()`-Äquivalente in
    `weclapp_sync/setup/runner.py` (`full=True`-Zweig) ergänzen - vor den abhängigen Mappern.

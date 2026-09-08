@@ -108,3 +108,13 @@ register(
 		mapper_path="weclapp_sync.sync.mappers.customer:CustomerMapper",
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="supplier",
+		label="Lieferanten",
+		weclapp_doctype=WeClappDocType.SUPPLIER,
+		target_doctype="Supplier",
+		mapper_path="weclapp_sync.sync.mappers.supplier:SupplierMapper",
+	)
+)

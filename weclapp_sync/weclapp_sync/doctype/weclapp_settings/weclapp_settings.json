@@ -33,6 +33,7 @@
   "default_currency",
   "default_customer_group_company",
   "default_customer_group_individual",
+  "default_supplier_group",
   "column_break_mapping",
   "default_territory",
   "default_territory_germany",
@@ -210,6 +211,12 @@
    "fieldtype": "Link",
    "label": "Kundengruppe – Privat",
    "options": "Customer Group"
+  },
+  {
+   "fieldname": "default_supplier_group",
+   "fieldtype": "Link",
+   "label": "Lieferantengruppe",
+   "options": "Supplier Group"
   },
   {
    "fieldname": "column_break_mapping",

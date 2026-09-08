@@ -192,7 +192,7 @@ class CustomerMapper(Mapper):
 		# 5) Bankkonten
 		for wc_ba in record.get("bankAccounts") or []:
 			_guarded("Bank Account", name, wc_ba, lambda b=wc_ba: pc.upsert_bank_account(
-				b, party_doctype=_PARTY_DOCTYPE, party_name=name
+				b, party_doctype=_PARTY_DOCTYPE, party_name=name, account_type="Kunden-Bankkonto"
 			))
 
 		# 6) Personenkonto (Debitorenkonto) - party.customerDebtorAccountNumber
@@ -234,26 +234,6 @@ class CustomerMapper(Mapper):
 		return name
 
 
-def _display_name(record: dict) -> str:
-	if record.get("partyType") != "PERSON":
-		return (record.get("company") or "").strip()
-	return f"{record.get('firstName') or ''} {record.get('lastName') or ''}".strip()
-
-
-def _block_notice(value: str | None) -> str | None:
-	value = (value or "").strip()
-	return f"Sperrgrund: {value}" if value else None
-
-
-def _purpose_email(party: dict, purpose_field: str) -> str | None:
-	"""Löst eine belegart-spezifische E-Mail-Adresse auf (party.<purpose>EmailAddressesId ->
-	partyEmailAddresses[].toAddresses). WeClapp führt getrennte Adressen für Rechnung,
-	Auftragsbestätigung, Lieferschein, Mahnung, Angebot (und Bestellung auf Lieferantenseite) -
-	selten gesetzt, aber wenn, dann maßgeblich."""
-	target_id = party.get(purpose_field)
-	if not target_id:
-		return None
-	for entry in party.get("partyEmailAddresses") or []:
-		if entry.get("id") == target_id:
-			return entry.get("toAddresses") or None
-	return None
+_display_name = pc.display_name
+_block_notice = pc.block_notice
+_purpose_email = pc.purpose_email
