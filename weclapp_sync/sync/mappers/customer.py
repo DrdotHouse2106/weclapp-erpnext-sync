@@ -8,8 +8,12 @@ Das `party`-Objekt (customer.id == party.id) wird pro Kunde einmal nachgeladen -
 Felder, die `customer` selbst nicht hat: `customerDebtorAccountNumber` (Personenkonto),
 `customerInternalNote`, `salesInvoiceEmailAddressesId`.
 
+Belegart-spezifische E-Mails (Rechnung/Auftrag/Lieferschein/Mahnung/Angebot) werden aus
+`party.partyEmailAddresses` in eigene Customer-Data-Felder gemappt. Bankkonten -> ERPNext
+Bank Account. Personenkonto (Debitorenkonto) je Kunde -> Customer.accounts (eigenes DATEV-Konto
+pro Kunde; ~9 von 5838 Kunden haben in WeClapp keine Debitor-Nr. und landen auf dem Sammelkonto).
+
 Noch NICHT portiert (jeweils eigener Folge-Schritt, siehe CLAUDE.md):
-- Bankkonten (BankAccountMigration)
 - Custom Attributes (Zusatzfelder) - braucht customAttributeDefinition-Abruf
 - WeClapp-Dokumente (Anhänge) hochladen
 - WeClapp-Kommentare ("Kommentare", separater Endpunkt pro party-id)
@@ -100,7 +104,11 @@ class CustomerMapper(Mapper):
 				record.get("description"),
 			)
 			or None,
-			"invoice_email": _invoice_email(party) or None,
+			"invoice_email": _purpose_email(party, "salesInvoiceEmailAddressesId"),
+			"order_email": _purpose_email(party, "salesOrderEmailAddressesId"),
+			"delivery_email": _purpose_email(party, "deliveryEmailAddressesId"),
+			"dunning_email": _purpose_email(party, "dunningEmailAddressesId"),
+			"quotation_email": _purpose_email(party, "quotationEmailAddressesId"),
 			# Payment Terms Template muss existieren (setup_payment_terms-Äquivalent noch TODO) -
 			# fehlt es, Feld leer lassen statt den Kunden scheitern zu lassen.
 			"payment_terms": h.link_or_none("Payment Terms Template", record.get("termOfPaymentName")),
@@ -165,7 +173,13 @@ class CustomerMapper(Mapper):
 					name_suffix=number,
 				))
 
-		# 5) Personenkonto (Debitorenkonto) - party.customerDebtorAccountNumber
+		# 5) Bankkonten
+		for wc_ba in record.get("bankAccounts") or []:
+			_guarded("Bank Account", name, wc_ba, lambda b=wc_ba: pc.upsert_bank_account(
+				b, party_doctype=_PARTY_DOCTYPE, party_name=name
+			))
+
+		# 6) Personenkonto (Debitorenkonto) - party.customerDebtorAccountNumber
 		party = self._party(record)
 		debtor_number = party.get("customerDebtorAccountNumber")
 		if debtor_number:
@@ -183,7 +197,7 @@ class CustomerMapper(Mapper):
 					cust.flags.ignore_permissions = True
 					cust.save()
 
-		# 6) Primär-Verknüpfungen + Territory aus Primäradresse
+		# 7) Primär-Verknüpfungen + Territory aus Primäradresse
 		updates: dict[str, Any] = {}
 		if primary_address:
 			updates["customer_primary_address"] = primary_address["name"]
@@ -215,13 +229,15 @@ def _block_notice(value: str | None) -> str | None:
 	return f"Sperrgrund: {value}" if value else None
 
 
-def _invoice_email(party: dict) -> str | None:
-	"""WeClapps eigener Rechnungs-E-Mail-Override (party.salesInvoiceEmailAddressesId ->
-	partyEmailAddresses). Selten gesetzt."""
-	target_id = party.get("salesInvoiceEmailAddressesId")
+def _purpose_email(party: dict, purpose_field: str) -> str | None:
+	"""Löst eine belegart-spezifische E-Mail-Adresse auf (party.<purpose>EmailAddressesId ->
+	partyEmailAddresses[].toAddresses). WeClapp führt getrennte Adressen für Rechnung,
+	Auftragsbestätigung, Lieferschein, Mahnung, Angebot (und Bestellung auf Lieferantenseite) -
+	selten gesetzt, aber wenn, dann maßgeblich."""
+	target_id = party.get(purpose_field)
 	if not target_id:
 		return None
 	for entry in party.get("partyEmailAddresses") or []:
 		if entry.get("id") == target_id:
-			return entry.get("toAddresses")
+			return entry.get("toAddresses") or None
 	return None

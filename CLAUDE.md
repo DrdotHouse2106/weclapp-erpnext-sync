@@ -87,9 +87,24 @@ Fertig:
 - Bekannt: Contact-`name` bekommt von ERPNext automatisch `-{customerNumber}`-Suffix
   (Standard bei verknüpften Kontakten) - deterministisch, Re-Run-Abgleich via `wc_id`.
 
+### Increment 4: belegart-spezifische E-Mails, Bankkonten, Debitorenkonten je Kunde
+- WeClapp `party` führt 6 belegart-spezifische E-Mail-Purposes
+  (`salesInvoice/salesOrder/delivery/dunning/quotation/purchaseEmailAddressesId` ->
+  `partyEmailAddresses[].toAddresses`). Gemappt in Customer-Data-Felder
+  `invoice_email`/`order_email`/`delivery_email`/`dunning_email`/`quotation_email`
+  (Section "E-Mail-Adressen je Belegart"), `purchase_email` auf Supplier. Nur ~37 Parteien
+  haben überhaupt welche gesetzt, aber dann maßgeblich.
+- Bankkonten: `_party_common.upsert_bank_account()` + `ensure_bank()` (Port aus
+  reference bank_/bank_account_migration.py). WeClapp `customer.bankAccounts[]` ->
+  ERPNext `Bank Account` (+ `Bank`, dedup über BIC), verknüpft mit dem Kunden, `wc_id`-idempotent.
+- Debitorenkonten: bestätigt 5829/5838 Kunden haben `customerDebtorAccountNumber`
+  (Bereich 10000–15833), 396/396 Lieferanten `supplierCreditorAccountNumber`. Die 9 ohne
+  landen auf dem Sammelkonto (WeClapp bleibt Quelle - dort Debitor-Nr. nachtragen).
+  partyType: 768 ORGANIZATION + 5534 PERSON.
+
 Als Nächstes (Reihenfolge):
-1. Kunden-Mapper: Bankkonten + Custom Attributes (Zusatzfelder, braucht
-   `customAttributeDefinition`-Abruf) + `apply_wc_blocks` (blocked/insolvent).
+1. Kunden-Mapper: Custom Attributes (Zusatzfelder, braucht `customAttributeDefinition`-Abruf) +
+   `apply_wc_blocks` (blocked/insolvent -> disabled/is_frozen als Schlussphase).
 2. **Lieferanten-Mapper** (`supplier_migration.py`, weitgehend analog zu Kunden).
 3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
 4. Für Personenkonten/Konten/Lager/Zahlungsbedingungen die fehlenden `setup_*()`-Äquivalente in

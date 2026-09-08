@@ -18,6 +18,7 @@ _WC_ID_DOCTYPES = [
 	"Item",
 	"Address",
 	"Contact",
+	"Bank Account",
 	"Sales Invoice",
 	"Sales Order",
 	"Quotation",
@@ -76,12 +77,20 @@ def _extra_fields() -> dict[str, list[dict]]:
 		],
 		"Customer": [
 			{
-				"fieldname": "invoice_email",
-				"label": "Invoice Email",
-				"fieldtype": "Data",
+				"fieldname": "wc_email_section",
+				"label": "E-Mail-Adressen je Belegart (WeClapp)",
+				"fieldtype": "Section Break",
+				"collapsible": 1,
 				"insert_after": "email_id",
-				"options": "Email",
-			}
+			},
+			{"fieldname": "invoice_email", "label": "Rechnung", "fieldtype": "Data", "options": "Email", "insert_after": "wc_email_section"},
+			{"fieldname": "order_email", "label": "Auftragsbestätigung", "fieldtype": "Data", "options": "Email", "insert_after": "invoice_email"},
+			{"fieldname": "delivery_email", "label": "Lieferschein", "fieldtype": "Data", "options": "Email", "insert_after": "order_email"},
+			{"fieldname": "dunning_email", "label": "Mahnung", "fieldtype": "Data", "options": "Email", "insert_after": "delivery_email"},
+			{"fieldname": "quotation_email", "label": "Angebot", "fieldtype": "Data", "options": "Email", "insert_after": "dunning_email"},
+		],
+		"Supplier": [
+			{"fieldname": "purchase_email", "label": "Bestell-E-Mail (WeClapp)", "fieldtype": "Data", "options": "Email", "insert_after": "email_id"},
 		],
 	}
 	for dt in ("Customer", "Supplier"):

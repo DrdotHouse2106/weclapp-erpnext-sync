@@ -154,6 +154,84 @@ def upsert_contact(
 	return {"name": doc.name, "is_primary": is_primary}
 
 
+# --------------------------------------------------------------------------- Bank / Bank Account
+def ensure_bank(credit_institute: str, bank_code: str) -> str | None:
+	"""Findet/legt eine ERPNext-Bank an. Dedup zuerst über die BIC (swift_number), dann über
+	den Namen (bei Namenskollision mit anderer BIC wird ` (n)` angehängt).
+	Portiert aus reference bank_migration.py."""
+	credit_institute = (credit_institute or "").strip()
+	bank_code = (bank_code or "").strip()
+	if not (credit_institute and bank_code):
+		return None
+
+	by_swift = frappe.db.get_value("Bank", {"swift_number": bank_code}, "name")
+	if by_swift:
+		return by_swift
+
+	name = credit_institute
+	if not frappe.db.exists("Bank", name):
+		doc = frappe.new_doc("Bank")
+		doc.bank_name = name
+		doc.swift_number = bank_code
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		return doc.name
+
+	# Name vergeben, aber andere BIC -> nummerierten Namen suchen.
+	i = 1
+	while frappe.db.exists("Bank", f"{name} ({i})"):
+		i += 1
+	doc = frappe.new_doc("Bank")
+	doc.bank_name = f"{name} ({i})"
+	doc.swift_number = bank_code
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc.name
+
+
+def bank_account_is_valid(wc_ba: dict) -> bool:
+	return bool(
+		wc_ba.get("accountHolder")
+		and wc_ba.get("accountNumber")
+		and wc_ba.get("bankCode")
+		and wc_ba.get("creditInstitute")
+	)
+
+
+def upsert_bank_account(
+	wc_ba: dict, *, party_doctype: str, party_name: str
+) -> str | None:
+	"""Legt/aktualisiert ein ERPNext Bank Account für ein WeClapp-Bankkonto an, verknüpft mit
+	der Partei. Idempotent über `wc_id`. Portiert aus reference bank_account_migration.py."""
+	if not bank_account_is_valid(wc_ba):
+		return None
+
+	bank = ensure_bank(wc_ba.get("creditInstitute"), wc_ba.get("bankCode"))
+	if not bank:
+		return None
+
+	wc_id = str(wc_ba.get("id") or "")
+	fields = {
+		"account_name": party_name,
+		"bank": bank,
+		"iban": (wc_ba.get("accountNumber") or "").replace(" ", ""),
+		"is_default": 1 if wc_ba.get("primary") else 0,
+		"party_type": party_doctype,
+		"party": party_name,
+		"wc_id": wc_id or None,
+	}
+	# Bank Account Type ist optional - nur setzen, wenn im System vorhanden.
+	if frappe.db.exists("Bank Account Type", "Kunden-Bankkonto"):
+		fields["account_type"] = "Kunden-Bankkonto"
+
+	name = frappe.db.exists("Bank Account", {"wc_id": wc_id}) if wc_id else None
+	doc = frappe.get_doc("Bank Account", name) if name else frappe.new_doc("Bank Account")
+	doc.update(fields)
+	doc.flags.ignore_permissions = True
+	doc.save() if name else doc.insert()
+	return doc.name
+
+
 def build_self_contact(wc_party: dict, display_name: str, is_company: bool) -> dict | None:
 	""""self"-Kontakt aus den Kontaktdaten der Partei selbst (PERSON-Kunden haben keinen
 	separaten contacts[]-Eintrag; manche Firmen ebenfalls nicht). Siehe
