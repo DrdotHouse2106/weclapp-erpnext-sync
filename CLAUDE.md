@@ -118,11 +118,34 @@ Fertig:
   `purpose_email`. `upsert_bank_account(account_type=...)` parametrisiert.
 - Erster **voller Kunden-Import** (WC-SYNC-00004) gestartet: bei 1700/5838 sauber, 0 Fehler.
 
+### Increment 6: Zusatzfelder + Artikel-Mapper
+- `sync/mappers/_custom_attributes.py` - customAttributes -> Custom Fields (nur bestehende
+  Felder; Feld-Anlegen aus `customAttributeDefinition` = TODO). In customer/supplier/article.
+- `sync/mappers/article.py` (`ArticleMapper`, registriert, 3/14): Kern-Item + Barcode (ean) +
+  Hersteller (on-demand `Manufacturer`) + Artikelgruppe (on-demand aus `articleCategory`-Map) +
+  UOM (`ensure_uom`: Alias-Map / on-demand) + Zusatzfelder + **ein** Verkaufspreis (erster
+  allgemeiner WeClapp-Preis -> Item Price). `description`/`item_group` nur bei Neuanlage.
+- `erpnext_helpers`: `ensure_uom` / `ensure_manufacturer` / `ensure_item_group`.
+- WeClapp Settings: `default_item_group` / `default_selling_price_list` /
+  `default_buying_price_list`.
+- Zahlen: article 6211, articleCategory 132, articleSupplySource **87012** (muss pro Artikel
+  gefiltert nachgeladen werden), articlePrice 21896 (aber `articlePrices` sind im
+  article-Payload eingebettet).
+
+Noch offen am Artikel-Mapper: Bezugsquellen (`supplySources` -> Item Supplier /
+item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
+
 Als Nächstes (Reihenfolge):
-1. Custom Attributes (Zusatzfelder) für Kunde+Lieferant - braucht `customAttributeDefinition`-
-   Abruf (einmal pro Lauf cachen). Feldnamen via `erpnext_helpers.custom_fieldname`.
-2. `apply_wc_blocks` (blocked/insolvent/orderBlock -> disabled/is_frozen) als Schlussphase.
-3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
+1. `apply_wc_blocks` (blocked/insolvent/orderBlock/`article.active` -> disabled/is_frozen) als
+   Schlussphase-Nachlauf.
+2. `setup_*()`-Äquivalente in `setup/runner.py` (`full=True`): Payment Terms Templates
+   (`_parse_wc_payment_term` aus reference/setup.py), Fiscal Years 2023-2025, Warehouses,
+   Cost Center, Tax-Templates - **Voraussetzung für die Transaktions-Mapper**.
+3. Transaktions-Mapper in `SYNC_ORDER`: quotation, sales_order, sales_invoice, sales_payment,
+   shipment, purchase_order, purchase_invoice, purchase_payment. Steuer-/Zahlungslogik aus
+   `reference/.../base_migration.py` (`_add_tax`/`_map_taxes`/`_map_net_rate`) + der CLAUDE.md
+   des Vorgängerprojekts (gelöste Fachprobleme).
+4. `crm_event`, `stock_movement`.
 3. **Artikel-Mapper** (`article_migration.py`) + `article_price`.
 4. Für Personenkonten/Konten/Lager/Zahlungsbedingungen die fehlenden `setup_*()`-Äquivalente in
    `weclapp_sync/setup/runner.py` (`full=True`-Zweig) ergänzen - vor den abhängigen Mappern.

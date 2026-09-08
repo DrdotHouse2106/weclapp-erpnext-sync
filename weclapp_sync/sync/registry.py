@@ -118,3 +118,13 @@ register(
 		mapper_path="weclapp_sync.sync.mappers.supplier:SupplierMapper",
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="article",
+		label="Artikel",
+		weclapp_doctype=WeClappDocType.ARTICLE,
+		target_doctype="Item",
+		mapper_path="weclapp_sync.sync.mappers.article:ArticleMapper",
+	)
+)

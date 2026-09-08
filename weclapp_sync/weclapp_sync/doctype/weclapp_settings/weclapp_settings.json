@@ -38,6 +38,9 @@
   "default_territory",
   "default_territory_germany",
   "default_uom",
+  "default_item_group",
+  "default_selling_price_list",
+  "default_buying_price_list",
   "section_accounts",
   "debtor_parent_account",
   "creditor_parent_account"
@@ -241,6 +244,27 @@
    "fieldtype": "Link",
    "label": "Standard-Mengeneinheit",
    "options": "UOM"
+  },
+  {
+   "default": "All Item Groups",
+   "fieldname": "default_item_group",
+   "fieldtype": "Link",
+   "label": "Standard-Artikelgruppe",
+   "options": "Item Group"
+  },
+  {
+   "default": "Standard Selling",
+   "fieldname": "default_selling_price_list",
+   "fieldtype": "Link",
+   "label": "Verkaufspreisliste",
+   "options": "Price List"
+  },
+  {
+   "default": "Standard Buying",
+   "fieldname": "default_buying_price_list",
+   "fieldtype": "Link",
+   "label": "Einkaufspreisliste",
+   "options": "Price List"
   },
   {
    "fieldname": "section_accounts",

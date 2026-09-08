@@ -113,6 +113,69 @@ def default_uom() -> str:
 	return _settings().default_uom or "Nos"
 
 
+def default_item_group() -> str:
+	return _settings().default_item_group or "All Item Groups"
+
+
+# WeClapp unitName (lowercased, punktbereinigt) -> ERPNext-UOM. Nur eindeutige Fälle;
+# alles andere wird on-demand als UOM angelegt.
+_UOM_ALIASES = {
+	"stk": "Nos",
+	"stck": "Nos",
+	"stück": "Nos",
+	"stueck": "Nos",
+	"st": "Nos",
+	"": "Nos",
+}
+
+
+def ensure_uom(unit_name: str | None) -> str:
+	"""Mappt eine WeClapp-Mengeneinheit auf eine ERPNext-UOM. Bekannter Alias -> Standard-UOM;
+	sonst: existierende UOM gleichen Namens nutzen oder neu anlegen; leer -> default_uom."""
+	raw = (unit_name or "").strip()
+	if not raw:
+		return default_uom()
+	key = raw.lower().replace(".", "").replace(" ", "")
+	if key in _UOM_ALIASES:
+		return _UOM_ALIASES[key]
+	if frappe.db.exists("UOM", raw):
+		return raw
+	doc = frappe.new_doc("UOM")
+	doc.uom_name = raw
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc.name
+
+
+def ensure_manufacturer(name: str | None) -> str | None:
+	name = (name or "").strip()
+	if not name:
+		return None
+	if frappe.db.exists("Manufacturer", name):
+		return name
+	doc = frappe.new_doc("Manufacturer")
+	doc.short_name = name
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc.name
+
+
+def ensure_item_group(name: str | None) -> str:
+	name = (name or "").strip()
+	if not name:
+		return default_item_group()
+	if frappe.db.exists("Item Group", name):
+		return name
+	parent = default_item_group()
+	doc = frappe.new_doc("Item Group")
+	doc.item_group_name = name
+	doc.parent_item_group = parent if frappe.db.exists("Item Group", parent) else "All Item Groups"
+	doc.is_group = 0
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc.name
+
+
 def default_currency() -> str:
 	return _settings().default_currency or "EUR"
 
