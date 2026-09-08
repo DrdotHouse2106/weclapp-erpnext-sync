@@ -36,7 +36,7 @@ bench get-app weclapp_sync https://github.com/DrdotHouse2106/weclapp-erpnext-syn
 bench --site <site> install-app weclapp_sync
 ```
 
-Danach in ERPNext **WeClapp Settings** öffnen: Base-URL + API-Token eintragen, Verbindung testen,
+Danach erscheint im Desk der Bereich **WeClapp Sync** (Workspace). Dort **WeClapp Settings** öffnen: Base-URL + API-Token eintragen, Verbindung testen,
 Objekttypen auswählen, „WeClapp Sync aktiv" setzen. Für den Erstimport „Vollimport jetzt
 starten"; für den laufenden Betrieb „Automatischen Delta-Sync aktivieren".
 

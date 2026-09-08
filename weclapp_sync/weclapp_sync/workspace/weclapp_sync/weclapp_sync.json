@@ -1,0 +1,99 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"wc_header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">WeClapp Sync</span>\",\"col\":12}},{\"id\":\"wc_para\",\"type\":\"paragraph\",\"data\":{\"text\":\"Vollimport und laufender Delta-Sync von WeClapp nach ERPNext. Einstieg über <b>WeClapp Settings</b>.\",\"col\":12}},{\"id\":\"wc_sc_settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"WeClapp Settings\",\"col\":4}},{\"id\":\"wc_sc_runs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sync-Läufe\",\"col\":4}},{\"id\":\"wc_sc_log\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Fehler-Log\",\"col\":4}},{\"id\":\"wc_spacer\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"wc_card_config\",\"type\":\"card\",\"data\":{\"card_name\":\"Konfiguration\",\"col\":4}},{\"id\":\"wc_card_monitor\",\"type\":\"card\",\"data\":{\"card_name\":\"Überwachung\",\"col\":4}}]",
+ "creation": "2026-09-08 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "sync",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "WeClapp Sync",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Konfiguration",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WeClapp Settings",
+   "link_count": 0,
+   "link_to": "WeClapp Settings",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Überwachung",
+   "link_count": 0,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WeClapp Sync Run",
+   "link_count": 0,
+   "link_to": "WeClapp Sync Run",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "WeClapp Sync Log",
+   "link_count": 0,
+   "link_to": "WeClapp Sync Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-09-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WeClapp Sync",
+ "name": "WeClapp Sync",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 1.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "WeClapp Settings",
+   "link_to": "WeClapp Settings",
+   "type": "DocType"
+  },
+  {
+   "color": "Blue",
+   "doc_view": "List",
+   "label": "Sync-Läufe",
+   "link_to": "WeClapp Sync Run",
+   "type": "DocType"
+  },
+  {
+   "color": "Red",
+   "doc_view": "List",
+   "label": "Fehler-Log",
+   "link_to": "WeClapp Sync Log",
+   "type": "DocType"
+  }
+ ],
+ "title": "WeClapp Sync"
+}
