@@ -125,6 +125,7 @@ def upsert_contact(
 		"first_name": wc_contact.get("firstName") or "",
 		"last_name": wc_contact.get("lastName") or "",
 		"status": "Passive",
+		"is_primary_contact": 1 if is_primary else 0,
 		"salutation": _SALUTATION_MAP.get(wc_contact.get("salutation")),
 		"designation": wc_contact.get("title") or None,
 		"wc_fax": wc_contact.get("fax") or None,

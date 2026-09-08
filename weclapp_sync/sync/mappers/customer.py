@@ -148,6 +148,12 @@ class CustomerMapper(Mapper):
 				updates["territory"] = territory
 		if primary_contact:
 			updates["customer_primary_contact"] = primary_contact["name"]
+			# Flag am gewählten Primärkontakt setzen (kam er über den first_contact-Fallback,
+			# ist is_primary_contact dort noch 0).
+			if not frappe.db.get_value("Contact", primary_contact["name"], "is_primary_contact"):
+				frappe.db.set_value(
+					"Contact", primary_contact["name"], "is_primary_contact", 1, update_modified=False
+				)
 		if updates:
 			frappe.db.set_value("Customer", name, updates, update_modified=False)
 
