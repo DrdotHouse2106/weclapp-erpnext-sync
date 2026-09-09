@@ -162,8 +162,15 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
 - Doctype `WeClapp Price List Mapping` (Child von Settings, `price_list_mappings`) +
   Button `populate_price_list_mappings`: legt je Kanal eine ERPNext Price List "WeClapp <chan>"
   an, Nutzer aktiviert die gewünschten Kanäle.
-- `article._sync_prices()`: jeder Preis eines aktivierten Kanals -> Item Price in der gemappten
-  Liste, mit `min_qty` (Staffel), `valid_from/upto`, `customer` (wc_id-Lookup). Idempotent.
+- `article._sync_prices()`: **volle** WeClapp-Preishistorie je (Kanal, Staffel, Kunde) -> Item
+  Prices in der gemappten Liste, mit `min_qty` (Staffel), rekonstruierter Zeitleiste
+  (`valid_upto` = nächstes `startDate` - 1 Tag, sonst lehnt ERPNext überlappende offene Preise
+  ab: `ItemPriceDuplicateItem`), `customer` (wc_id-Lookup). Idempotent durch **vollständigen
+  Neuaufbau**: erst alle Item Prices des Artikels in den verwalteten Listen löschen, dann frisch
+  anlegen - kein fragiles Bestands-Matching, immun gegen Altbestand ohne Gültigkeitsdatum.
+  (2026-09-09: `_sync_prices` mehrfach überarbeitet - erst nur jüngster Preis [Nutzer wollte
+  volle Historie], dann Bestands-Matching über `valid_from` [kollidierte mit Alt-Item-Prices
+  aus früheren Läufen -> alle Artikel-Läufe fehlgeschlagen], jetzt Delete+Rebuild.)
 
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
