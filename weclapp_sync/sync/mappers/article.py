@@ -101,9 +101,11 @@ class ArticleMapper(Mapper):
 		je Gruppe nach `startDate` sortieren, `valid_upto` = min(eigenes endDate, nächstes
 		startDate - 1 Tag). Der jüngste Preis bleibt offen (falls kein endDate).
 
-		Idempotent: bestehender Item Price wird über (price_list, currency, min_qty, customer,
-		valid_from) gematcht; neue Preise kommen dazu, geänderte Gültigkeiten werden aktualisiert,
-		in WeClapp entfernte Preise werden gelöscht.
+		Idempotent durch **vollständigen Neuaufbau**: alle bestehenden Item Prices dieses
+		Artikels in den verwalteten Preislisten werden gelöscht und aus der aktuellen
+		WeClapp-Historie neu angelegt. So kann es keine Kollision mit Altbeständen geben
+		(z.B. Preise ohne Gültigkeitsdatum aus früheren Läufen -> ItemPriceDuplicateItem).
+		Läuft im Datensatz-Savepoint der Engine, ein Fehler rollt nur diesen Artikel zurück.
 		"""
 		channels = self._channel_lists()
 		if not channels:
@@ -117,13 +119,15 @@ class ArticleMapper(Mapper):
 			key = (ch, _to_float(p.get("priceScaleValue"), 0.0), p.get("customerId") or None)
 			groups.setdefault(key, []).append(p)
 
-		managed_lists = set(channels.values())
-		existing_prices = frappe.get_all(
+		managed_lists = [pl for pl in set(channels.values()) if pl]
+
+		# Altbestand für diesen Artikel in den verwalteten Listen komplett entfernen.
+		for old in frappe.get_all(
 			"Item Price",
-			filters={"item_code": item_code, "selling": 1, "price_list": ["in", list(managed_lists)]},
-			fields=["name", "price_list", "currency", "min_qty", "customer", "valid_from"],
-		)
-		kept: set[str] = set()
+			filters={"item_code": item_code, "price_list": ["in", managed_lists]},
+			pluck="name",
+		):
+			frappe.delete_doc("Item Price", old, ignore_permissions=True, force=True)
 
 		for (ch, min_qty, cust_id), prices in groups.items():
 			price_list = channels[ch]
@@ -148,19 +152,7 @@ class ArticleMapper(Mapper):
 				if valid_from and valid_upto and valid_upto < valid_from:
 					continue
 
-				match = next(
-					(
-						ip.name
-						for ip in existing_prices
-						if ip.price_list == price_list
-						and ip.currency == currency
-						and float(ip.min_qty or 0) == min_qty
-						and (ip.customer or None) == (customer or None)
-						and _d(ip.valid_from) == (valid_from or "")
-					),
-					None,
-				)
-				doc = frappe.get_doc("Item Price", match) if match else frappe.new_doc("Item Price")
+				doc = frappe.new_doc("Item Price")
 				doc.update(
 					{
 						"item_code": item_code,
@@ -175,19 +167,7 @@ class ArticleMapper(Mapper):
 					}
 				)
 				doc.flags.ignore_permissions = True
-				doc.save() if match else doc.insert()
-				if match:
-					kept.add(match)
-				else:
-					kept.add(doc.name)
-
-		# In WeClapp nicht mehr vorhandene Preise dieses Artikels entfernen.
-		for ip in existing_prices:
-			if ip.name not in kept:
-				try:
-					frappe.delete_doc("Item Price", ip.name, ignore_permissions=True, force=True)
-				except Exception:
-					pass
+				doc.insert()
 
 
 def _to_float(v, default: float) -> float:
