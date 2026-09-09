@@ -173,7 +173,10 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   100/100-Artikelfehler war `min_qty`:** ERPNext "Item Price" hat das Feld nicht ->
   `frappe.get_all(... fields=["min_qty"])` warf `Unknown column 'min_qty'`. Jetzt nur nutzen
   wenn `meta.has_field("min_qty")`, sonst Staffelpreise `priceScaleValue > 1` auslassen -
-  Mengenstaffeln = Pricing Rules = Folge-Schritt, wie im Vorgänger-Importer.)
+  Mengenstaffeln = Pricing Rules = Folge-Schritt, wie im Vorgänger-Importer.
+  Danach 3/100: WeClapp-Preise ohne `startDate` -> leeres `valid_from` bei gesetztem
+  `valid_upto` wertet ERPNext als HEUTE -> `InvalidDates`. Fix: leeres `valid_from` ->
+  `2000-01-01`; `valid_upto <= valid_from` auslassen (ERPNext verlangt strikt danach).)
 
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
