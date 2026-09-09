@@ -1,12 +1,15 @@
 """Artikel-Mapper: WeClapp `article` -> ERPNext `Item`.
 
 Portiert aus reference/.../article_migration.py. Kern-Item + Barcode + Hersteller + Artikelgruppe
-+ Zusatzfelder + ein Verkaufspreis (erster allgemeiner WeClapp-Preis).
++ Zusatzfelder + volle Preishistorie.
 
-Preise: WeClapp hat 15 Preiskanäle (NET1-8 netto, GROSS1-7 brutto). Über die
+Preise: WeClapp hat Preiskanäle (NET1-9 netto, GROSS1-8 brutto). Über die
 "WeClapp Price List Mapping"-Tabelle in den Settings wird je aktiviertem Kanal eine
-ERPNext-Preisliste bespielt - jeder Kanal-Preis inkl. Mengenstaffel (`priceScaleValue` ->
-min_qty) und Gültigkeit. Kundenspezifische Preise (`customerId`) -> Item Price mit `customer`.
+ERPNext-Preisliste bespielt. Die komplette WeClapp-Preishistorie je (Kanal, Mengenstaffel,
+Kunde) wird als Item Prices angelegt; WeClapp lässt alte Preise oft mit `endDate=NULL` stehen,
+daher wird die Zeitleiste rekonstruiert (valid_upto = nächstes startDate - 1 Tag), sonst
+lehnt ERPNext überlappende offene Preise ab. Idempotent inkl. Löschen entfernter Preise.
+Kundenspezifische Preise (`customerId`) -> Item Price mit `customer` (wc_id-Lookup).
 
 Noch NICHT portiert (Folge-Schritt):
 - Bezugsquellen (`supplySources` -> Item Supplier / item_defaults.default_supplier / Einkaufspreis)
@@ -21,6 +24,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+from frappe.utils import add_days
 
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.sync.mappers import _custom_attributes as ca
@@ -90,73 +94,100 @@ class ArticleMapper(Mapper):
 		return name
 
 	def _sync_prices(self, item_code: str, record: dict) -> None:
-		"""Aktueller WeClapp-Preis je (Preiskanal, Mengenstaffel, Kunde) -> ERPNext Item Price.
+		"""Volle WeClapp-Preishistorie je (Preiskanal, Mengenstaffel, Kunde) -> ERPNext Item Prices.
 
-		WeClapp führt eine Preishistorie (mehrere Preise pro Kanal/Staffel mit `startDate`) -
-		davon wird nur der jüngste übernommen, ohne Gültigkeitsdaten (sonst ItemPriceDuplicateItem
-		wegen überlappender Zeiträume). Idempotent: bestehender Item Price wird in Python
-		gematcht (item/price_list/selling + currency/min_qty/customer)."""
+		WeClapp lässt ältere Preise oft mit `endDate = NULL` stehen. ERPNext verbietet zwei
+		offene Preise für denselben Schlüssel -> deshalb wird die Zeitleiste rekonstruiert:
+		je Gruppe nach `startDate` sortieren, `valid_upto` = min(eigenes endDate, nächstes
+		startDate - 1 Tag). Der jüngste Preis bleibt offen (falls kein endDate).
+
+		Idempotent: bestehender Item Price wird über (price_list, currency, min_qty, customer,
+		valid_from) gematcht; neue Preise kommen dazu, geänderte Gültigkeiten werden aktualisiert,
+		in WeClapp entfernte Preise werden gelöscht.
+		"""
 		channels = self._channel_lists()
 		if not channels:
 			return
 
-		# Pro (Kanal, Staffel, Kunde) den Preis mit dem jüngsten startDate behalten.
-		best: dict[tuple, dict] = {}
+		groups: dict[tuple, list[dict]] = {}
 		for p in record.get("articlePrices") or []:
 			ch = p.get("salesChannel")
 			if ch not in channels or p.get("price") is None:
 				continue
 			key = (ch, _to_float(p.get("priceScaleValue"), 0.0), p.get("customerId") or None)
-			cur = best.get(key)
-			if cur is None or (p.get("startDate") or 0) > (cur.get("startDate") or 0):
-				best[key] = p
+			groups.setdefault(key, []).append(p)
 
-		if not best:
-			return
-
+		managed_lists = set(channels.values())
 		existing_prices = frappe.get_all(
 			"Item Price",
-			filters={"item_code": item_code, "selling": 1},
-			fields=["name", "price_list", "currency", "min_qty", "customer"],
+			filters={"item_code": item_code, "selling": 1, "price_list": ["in", list(managed_lists)]},
+			fields=["name", "price_list", "currency", "min_qty", "customer", "valid_from"],
 		)
+		kept: set[str] = set()
 
-		for (ch, min_qty, cust_id), p in best.items():
+		for (ch, min_qty, cust_id), prices in groups.items():
 			price_list = channels[ch]
 			if not frappe.db.exists("Price List", price_list):
 				continue
-			currency = h.link_or_none("Currency", p.get("currencyName")) or h.default_currency()
 			customer = (
 				frappe.db.get_value("Customer", {"wc_id": str(cust_id)}, "name") if cust_id else None
 			)
+			prices.sort(key=lambda p: p.get("startDate") or 0)
 
-			match = next(
-				(
-					ip.name
-					for ip in existing_prices
-					if ip.price_list == price_list
-					and ip.currency == currency
-					and float(ip.min_qty or 0) == min_qty
-					and (ip.customer or None) == (customer or None)
-				),
-				None,
-			)
+			for i, p in enumerate(prices):
+				currency = h.link_or_none("Currency", p.get("currencyName")) or h.default_currency()
+				valid_from = h.date_from_ts(p.get("startDate"))
+				valid_upto = h.date_from_ts(p.get("endDate"))
+				# Ende an den Beginn des Folgepreises anschließen (überlappungsfrei).
+				if i + 1 < len(prices):
+					next_from = h.date_from_ts(prices[i + 1].get("startDate"))
+					if next_from:
+						cap = _d(add_days(next_from, -1))
+						valid_upto = min(valid_upto, cap) if valid_upto else cap
+				# Vollständig vom Folgepreis verdeckt -> überspringen.
+				if valid_from and valid_upto and valid_upto < valid_from:
+					continue
 
-			doc = frappe.get_doc("Item Price", match) if match else frappe.new_doc("Item Price")
-			doc.update(
-				{
-					"item_code": item_code,
-					"price_list": price_list,
-					"currency": currency,
-					"selling": 1,
-					"min_qty": min_qty,
-					"customer": customer,
-					"price_list_rate": float(p["price"]),
-					"valid_from": None,
-					"valid_upto": None,
-				}
-			)
-			doc.flags.ignore_permissions = True
-			doc.save() if match else doc.insert()
+				match = next(
+					(
+						ip.name
+						for ip in existing_prices
+						if ip.price_list == price_list
+						and ip.currency == currency
+						and float(ip.min_qty or 0) == min_qty
+						and (ip.customer or None) == (customer or None)
+						and _d(ip.valid_from) == (valid_from or "")
+					),
+					None,
+				)
+				doc = frappe.get_doc("Item Price", match) if match else frappe.new_doc("Item Price")
+				doc.update(
+					{
+						"item_code": item_code,
+						"price_list": price_list,
+						"currency": currency,
+						"selling": 1,
+						"min_qty": min_qty,
+						"customer": customer,
+						"price_list_rate": float(p["price"]),
+						"valid_from": valid_from,
+						"valid_upto": valid_upto,
+					}
+				)
+				doc.flags.ignore_permissions = True
+				doc.save() if match else doc.insert()
+				if match:
+					kept.add(match)
+				else:
+					kept.add(doc.name)
+
+		# In WeClapp nicht mehr vorhandene Preise dieses Artikels entfernen.
+		for ip in existing_prices:
+			if ip.name not in kept:
+				try:
+					frappe.delete_doc("Item Price", ip.name, ignore_permissions=True, force=True)
+				except Exception:
+					pass
 
 
 def _to_float(v, default: float) -> float:
@@ -164,3 +195,10 @@ def _to_float(v, default: float) -> float:
 		return float(v)
 	except (TypeError, ValueError):
 		return default
+
+
+def _d(v) -> str:
+	"""Datum (date/datetime/str/None) -> 'YYYY-MM-DD' bzw. '' - für stabilen Vergleich."""
+	if not v:
+		return ""
+	return str(v)[:10]
