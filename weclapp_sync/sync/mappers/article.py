@@ -12,6 +12,8 @@ lehnt ERPNext überlappende offene Preise ab. Idempotent inkl. Löschen entfernt
 Kundenspezifische Preise (`customerId`) -> Item Price mit `customer` (wc_id-Lookup).
 
 Noch NICHT portiert (Folge-Schritt):
+- Mengenstaffeln (`priceScaleValue` > 1): ERPNext "Item Price" hat kein `min_qty` (Staffeln
+  laufen über Pricing Rules). Fehlt das Feld, werden nur Basispreise übernommen.
 - Bezugsquellen (`supplySources` -> Item Supplier / item_defaults.default_supplier / Einkaufspreis)
   - `articleSupplySource` hat 87k Einträge, muss pro Artikel gefiltert nachgeladen werden.
 - Artikelbilder (WeClapp-Cache, hier nicht vorhanden)
@@ -111,12 +113,20 @@ class ArticleMapper(Mapper):
 		if not channels:
 			return
 
+		# ERPNext "Item Price" hat je nach Version kein `min_qty` (Mengenstaffeln laufen dort
+		# über Pricing Rules). Wenn das Feld fehlt: nur Basispreise (priceScaleValue <= 1)
+		# übernehmen - Staffelpreise sind ein Folge-Schritt (wie im Vorgänger-Importer).
+		has_min_qty = frappe.get_meta("Item Price").has_field("min_qty")
+
 		groups: dict[tuple, list[dict]] = {}
 		for p in record.get("articlePrices") or []:
 			ch = p.get("salesChannel")
 			if ch not in channels or p.get("price") is None:
 				continue
-			key = (ch, _to_float(p.get("priceScaleValue"), 0.0), p.get("customerId") or None)
+			scale = _to_float(p.get("priceScaleValue"), 1.0) or 1.0
+			if not has_min_qty and scale > 1:
+				continue
+			key = (ch, scale, p.get("customerId") or None)
 			groups.setdefault(key, []).append(p)
 
 		managed_lists = [pl for pl in set(channels.values()) if pl]
@@ -137,6 +147,7 @@ class ArticleMapper(Mapper):
 				frappe.db.get_value("Customer", {"wc_id": str(cust_id)}, "name") if cust_id else None
 			)
 			prices.sort(key=lambda p: p.get("startDate") or 0)
+			seen_from: set[str] = set()
 
 			for i, p in enumerate(prices):
 				currency = h.link_or_none("Currency", p.get("currencyName")) or h.default_currency()
@@ -151,21 +162,25 @@ class ArticleMapper(Mapper):
 				# Vollständig vom Folgepreis verdeckt -> überspringen.
 				if valid_from and valid_upto and valid_upto < valid_from:
 					continue
+				# Doppelte Gültigkeit im selben Kanal/Kunde -> ItemPriceDuplicateItem vermeiden.
+				if (valid_from or "") in seen_from:
+					continue
+				seen_from.add(valid_from or "")
 
+				fields = {
+					"item_code": item_code,
+					"price_list": price_list,
+					"currency": currency,
+					"selling": 1,
+					"customer": customer,
+					"price_list_rate": float(p["price"]),
+					"valid_from": valid_from,
+					"valid_upto": valid_upto,
+				}
+				if has_min_qty:
+					fields["min_qty"] = min_qty
 				doc = frappe.new_doc("Item Price")
-				doc.update(
-					{
-						"item_code": item_code,
-						"price_list": price_list,
-						"currency": currency,
-						"selling": 1,
-						"min_qty": min_qty,
-						"customer": customer,
-						"price_list_rate": float(p["price"]),
-						"valid_from": valid_from,
-						"valid_upto": valid_upto,
-					}
-				)
+				doc.update(fields)
 				doc.flags.ignore_permissions = True
 				doc.insert()
 
