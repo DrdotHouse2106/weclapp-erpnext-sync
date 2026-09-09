@@ -1,6 +1,7 @@
 {
  "charts": [],
  "content": "[{\"id\":\"wc_hdr\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>WeClapp Sync</b></span>\",\"col\":12}},{\"id\":\"wc_s1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"WeClapp Settings\",\"col\":3}},{\"id\":\"wc_s2\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sync-L\\u00e4ufe\",\"col\":3}},{\"id\":\"wc_s3\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Fehler-Log\",\"col\":3}},{\"id\":\"wc_c1\",\"type\":\"card\",\"data\":{\"card_name\":\"WeClapp Sync\",\"col\":4}}]",
+ "app": "weclapp_sync",
  "creation": "2026-09-08 00:00:00.000000",
  "docstatus": 0,
  "doctype": "Workspace",

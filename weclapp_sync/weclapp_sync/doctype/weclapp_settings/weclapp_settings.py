@@ -73,6 +73,10 @@ class WeClappSettings(Document):
 	def validate(self):
 		self.ensure_object_type_rows()
 
+	def on_update(self):
+		# Preislisten der Preiskanal-Zeilen abgleichen (Name aus channel_label, Brutto-Haken).
+		self._sync_all_channel_price_lists()
+
 	# ------------------------------------------------------------------ Objekttyp-Zeilen
 	def ensure_object_type_rows(self):
 		"""Sorgt dafür, dass für jeden Schlüssel aus registry.SYNC_ORDER genau eine Zeile
@@ -272,23 +276,25 @@ class WeClappSettings(Document):
 
 	@frappe.whitelist()
 	def populate_price_list_mappings(self):
-		"""Sammelt die distinct salesChannels aus WeClapp `articlePrice`, legt je Kanal eine
-		ERPNext-Preisliste an (falls noch nicht vorhanden) und trägt sie hier ein.
-		NET* = netto, GROSS* = brutto (nur Info-Flag)."""
+		"""Legt je WeClapp-Preiskanal eine Zeile an. Kanal-Universum: NET1..NET9 + GROSS1..GROSS8
+		(WeClapp-Standard) vereinigt mit den in `articlePrice` tatsächlich vorkommenden.
+		Legt/benennt die ERPNext-Preisliste nach `channel_label` und setzt an ihr den
+		Brutto-Haken (`custom_price_includes_tax`, falls das Feld existiert)."""
 		from weclapp_sync.sync.settings import get_client
 
 		client = get_client()
 		client.open()
 		try:
-			channels = sorted(
-				{
-					row.get("salesChannel")
-					for row in client.iter_all("articlePrice", properties="id,salesChannel")
-					if row.get("salesChannel")
-				}
-			)
+			used = {
+				row.get("salesChannel")
+				for row in client.iter_all("articlePrice", properties="id,salesChannel")
+				if row.get("salesChannel")
+			}
 		finally:
 			client.close()
+
+		known = {f"NET{i}" for i in range(1, 10)} | {f"GROSS{i}" for i in range(1, 9)}
+		channels = sorted(known | used, key=lambda c: (c[0] != "N", c))
 
 		by_channel = {row.sales_channel: row for row in self.price_list_mappings}
 		added = 0
@@ -300,26 +306,57 @@ class WeClappSettings(Document):
 				row.sales_channel = channel
 				added += 1
 			row.prices_include_tax = 1 if is_gross else 0
-
-			# Preisliste nur anlegen, wenn die Zeile noch keine hat. Name = Bezeichnung (falls
-			# gesetzt) sonst "WeClapp <Code>". Eine schon eingetragene Preisliste bleibt unangetastet.
-			if not row.price_list:
-				list_name = (row.channel_label or "").strip() or f"WeClapp {channel}"
-				if not frappe.db.exists("Price List", list_name):
-					pl = frappe.new_doc("Price List")
-					pl.price_list_name = list_name
-					pl.selling = 1
-					pl.currency = self.default_currency or "EUR"
-					pl.flags.ignore_permissions = True
-					pl.insert()
-				row.price_list = list_name
+			self._sync_channel_price_list(row)
 
 		self.save()
 		return (
 			f"{len(channels)} Preiskanäle, {added} neue Zeilen. "
-			"Tipp: Bezeichnung eintragen und den Button erneut klicken, dann heißt die neu "
-			"angelegte Preisliste so."
+			"Bezeichnung eintragen + erneut klicken -> Preisliste wird so benannt; "
+			"Brutto-Haken wird an der Preisliste gesetzt."
 		)
+
+	def _sync_channel_price_list(self, row) -> None:
+		"""Stellt sicher, dass die zur Mapping-Zeile gehörende Preisliste existiert, so heißt
+		wie `channel_label` und den Brutto-Haken passend gesetzt hat."""
+		label = (row.channel_label or "").strip()
+		desired = label or row.price_list or f"WeClapp {row.sales_channel}"
+
+		# Auto-angelegte "WeClapp <Code>"-Liste auf die Bezeichnung umbenennen.
+		if (
+			row.price_list
+			and label
+			and row.price_list != desired
+			and row.price_list.startswith("WeClapp ")
+			and frappe.db.exists("Price List", row.price_list)
+			and not frappe.db.exists("Price List", desired)
+		):
+			frappe.rename_doc("Price List", row.price_list, desired, ignore_permissions=True)
+			row.price_list = desired
+
+		if not row.price_list:
+			if not frappe.db.exists("Price List", desired):
+				pl = frappe.new_doc("Price List")
+				pl.price_list_name = desired
+				pl.selling = 1
+				pl.currency = self.default_currency or "EUR"
+				pl.flags.ignore_permissions = True
+				pl.insert()
+			row.price_list = desired
+
+		# Brutto-Haken an der Preisliste (custom_price_includes_tax) mit dem Kanal abgleichen.
+		if row.price_list and frappe.get_meta("Price List").has_field("custom_price_includes_tax"):
+			frappe.db.set_value(
+				"Price List", row.price_list, "custom_price_includes_tax", 1 if row.prices_include_tax else 0
+			)
+
+	def _sync_all_channel_price_lists(self) -> None:
+		for row in self.price_list_mappings:
+			try:
+				self._sync_channel_price_list(row)
+			except Exception:
+				frappe.log_error(
+					title=f"WeClapp: Preisliste für {row.sales_channel}", message=frappe.get_traceback()
+				)
 
 	@frappe.whitelist()
 	def start_full_import(self):

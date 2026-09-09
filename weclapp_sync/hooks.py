@@ -8,6 +8,15 @@ app_email = "drdothouse@gmail.com"
 app_license = "MIT"
 required_apps = ["frappe/erpnext"]
 
+# App-Umschalter / Startbildschirm
+add_to_apps_screen = [
+	{
+		"name": "weclapp_sync",
+		"title": "WeClapp Sync",
+		"route": "/app/weclapp-sync",
+	}
+]
+
 # ---------------------------------------------------------------------------
 # Scheduler
 # ---------------------------------------------------------------------------
