@@ -159,8 +159,14 @@ class ArticleMapper(Mapper):
 					if next_from:
 						cap = _d(add_days(next_from, -1))
 						valid_upto = min(valid_upto, cap) if valid_upto else cap
-				# Vollständig vom Folgepreis verdeckt -> überspringen.
-				if valid_from and valid_upto and valid_upto < valid_from:
+				# WeClapp lässt `startDate` oft leer ("schon immer gültig"). ERPNext behandelt
+				# ein leeres `valid_from` bei gesetztem `valid_upto` als HEUTE -> InvalidDates.
+				# Deshalb auf einen frühen Stichtag setzen.
+				if valid_upto and not valid_from:
+					valid_from = "2000-01-01"
+				# Vom Folgepreis (fast) vollständig verdeckt -> überspringen. ERPNext verlangt
+				# valid_upto STRIKT nach valid_from, daher auch Gleichstand auslassen.
+				if valid_from and valid_upto and valid_upto <= valid_from:
 					continue
 				# Doppelte Gültigkeit im selben Kanal/Kunde -> ItemPriceDuplicateItem vermeiden.
 				if (valid_from or "") in seen_from:
