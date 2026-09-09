@@ -178,6 +178,20 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   `valid_upto` wertet ERPNext als HEUTE -> `InvalidDates`. Fix: leeres `valid_from` ->
   `2000-01-01`; `valid_upto <= valid_from` auslassen (ERPNext verlangt strikt danach).)
 
+### Increment 9 (2026-09-09): Artikel-Import sauber, Angebots-Test
+- Artikel-Vollimport läuft fehlerfrei (100/100 im Debug-Lauf, nach den `min_qty`- und
+  `valid_from`-Fixes oben).
+- **Angebots-Test: 92/100 `LinkValidationError` "Artikel-Code ... nicht gefunden"** - die
+  Angebote verweisen auf Artikel außerhalb der 100 debug-importierten. Fix in
+  `_transaction.resolve_line_item()`: Zeile ohne `articleNumber` -> Platzhalter-Item `FREITEXT`
+  (lazy angelegt, `is_stock_item=0`); `articleNumber` ohne Item -> Minimal-Item aus den
+  Zeilendaten (`wc_id` aus `articleId`, damit ein späterer Artikel-Sync es über das Feld
+  wiederfindet und vervollständigt). Damit ist die Beleg-Import-Reihenfolge robust gegen
+  fehlende/gelöschte Artikel (entspricht `EN_FREE_TEXT_ITEM` im Vorgänger-Importer, plus
+  Stub-Anlage die es dort nicht gab, weil dort immer erst alle Artikel liefen).
+- **Für den echten Test:** Artikel-Vollimport ohne Debug-Limit fahren, dann Angebote - sonst
+  entstehen ~6000 Stub-Items, die erst ein späterer Artikel-Lauf füllt.
+
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
    Konten/Templates/Kostenstelle in Settings prüfen; Kunden-Delta einmal re-runnen (Watermark).
