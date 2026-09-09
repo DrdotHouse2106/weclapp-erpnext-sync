@@ -169,8 +169,11 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   Neuaufbau**: erst alle Item Prices des Artikels in den verwalteten Listen löschen, dann frisch
   anlegen - kein fragiles Bestands-Matching, immun gegen Altbestand ohne Gültigkeitsdatum.
   (2026-09-09: `_sync_prices` mehrfach überarbeitet - erst nur jüngster Preis [Nutzer wollte
-  volle Historie], dann Bestands-Matching über `valid_from` [kollidierte mit Alt-Item-Prices
-  aus früheren Läufen -> alle Artikel-Läufe fehlgeschlagen], jetzt Delete+Rebuild.)
+  volle Historie], dann volle Historie mit Zeitleiste, dann Delete+Rebuild. **Ursache der
+  100/100-Artikelfehler war `min_qty`:** ERPNext "Item Price" hat das Feld nicht ->
+  `frappe.get_all(... fields=["min_qty"])` warf `Unknown column 'min_qty'`. Jetzt nur nutzen
+  wenn `meta.has_field("min_qty")`, sonst Staffelpreise `priceScaleValue > 1` auslassen -
+  Mengenstaffeln = Pricing Rules = Folge-Schritt, wie im Vorgänger-Importer.)
 
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
