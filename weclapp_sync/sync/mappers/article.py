@@ -122,6 +122,12 @@ class ArticleMapper(Mapper):
 				},
 			)
 
+			valid_from = h.date_from_ts(p.get("startDate"))
+			valid_upto = h.date_from_ts(p.get("endDate"))
+			# WeClapp-Datenfehler: manche Preise haben endDate <= startDate -> ERPNext lehnt ab.
+			if valid_from and valid_upto and valid_upto <= valid_from:
+				valid_upto = None
+
 			doc = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
 			doc.update(
 				{
@@ -132,8 +138,8 @@ class ArticleMapper(Mapper):
 					"min_qty": min_qty,
 					"customer": customer,
 					"price_list_rate": float(p["price"]),
-					"valid_from": h.date_from_ts(p.get("startDate")),
-					"valid_upto": h.date_from_ts(p.get("endDate")),
+					"valid_from": valid_from,
+					"valid_upto": valid_upto,
 				}
 			)
 			doc.flags.ignore_permissions = True
