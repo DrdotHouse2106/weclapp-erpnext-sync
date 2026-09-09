@@ -90,45 +90,58 @@ class ArticleMapper(Mapper):
 		return name
 
 	def _sync_prices(self, item_code: str, record: dict) -> None:
-		"""Jeder WeClapp-Preis eines aktivierten Preiskanals -> ERPNext Item Price in der
-		gemappten Preisliste, inkl. Mengenstaffel (`priceScaleValue` -> min_qty) und Gültigkeit.
-		Idempotent über (item, price_list, currency, min_qty, customer, selling)."""
+		"""Aktueller WeClapp-Preis je (Preiskanal, Mengenstaffel, Kunde) -> ERPNext Item Price.
+
+		WeClapp führt eine Preishistorie (mehrere Preise pro Kanal/Staffel mit `startDate`) -
+		davon wird nur der jüngste übernommen, ohne Gültigkeitsdaten (sonst ItemPriceDuplicateItem
+		wegen überlappender Zeiträume). Idempotent: bestehender Item Price wird in Python
+		gematcht (item/price_list/selling + currency/min_qty/customer)."""
 		channels = self._channel_lists()
 		if not channels:
 			return
 
+		# Pro (Kanal, Staffel, Kunde) den Preis mit dem jüngsten startDate behalten.
+		best: dict[tuple, dict] = {}
 		for p in record.get("articlePrices") or []:
-			price_list = channels.get(p.get("salesChannel"))
-			if not price_list or p.get("price") is None:
+			ch = p.get("salesChannel")
+			if ch not in channels or p.get("price") is None:
 				continue
+			key = (ch, _to_float(p.get("priceScaleValue"), 0.0), p.get("customerId") or None)
+			cur = best.get(key)
+			if cur is None or (p.get("startDate") or 0) > (cur.get("startDate") or 0):
+				best[key] = p
+
+		if not best:
+			return
+
+		existing_prices = frappe.get_all(
+			"Item Price",
+			filters={"item_code": item_code, "selling": 1},
+			fields=["name", "price_list", "currency", "min_qty", "customer"],
+		)
+
+		for (ch, min_qty, cust_id), p in best.items():
+			price_list = channels[ch]
 			if not frappe.db.exists("Price List", price_list):
 				continue
-
 			currency = h.link_or_none("Currency", p.get("currencyName")) or h.default_currency()
-			min_qty = _to_float(p.get("priceScaleValue"), 0.0)
-			customer = None
-			if p.get("customerId"):
-				customer = frappe.db.get_value("Customer", {"wc_id": str(p["customerId"])}, "name")
-
-			existing = frappe.db.exists(
-				"Item Price",
-				{
-					"item_code": item_code,
-					"price_list": price_list,
-					"currency": currency,
-					"min_qty": min_qty,
-					"customer": customer or "",
-					"selling": 1,
-				},
+			customer = (
+				frappe.db.get_value("Customer", {"wc_id": str(cust_id)}, "name") if cust_id else None
 			)
 
-			valid_from = h.date_from_ts(p.get("startDate"))
-			valid_upto = h.date_from_ts(p.get("endDate"))
-			# WeClapp-Datenfehler: manche Preise haben endDate <= startDate -> ERPNext lehnt ab.
-			if valid_from and valid_upto and valid_upto <= valid_from:
-				valid_upto = None
+			match = next(
+				(
+					ip.name
+					for ip in existing_prices
+					if ip.price_list == price_list
+					and ip.currency == currency
+					and float(ip.min_qty or 0) == min_qty
+					and (ip.customer or None) == (customer or None)
+				),
+				None,
+			)
 
-			doc = frappe.get_doc("Item Price", existing) if existing else frappe.new_doc("Item Price")
+			doc = frappe.get_doc("Item Price", match) if match else frappe.new_doc("Item Price")
 			doc.update(
 				{
 					"item_code": item_code,
@@ -138,12 +151,12 @@ class ArticleMapper(Mapper):
 					"min_qty": min_qty,
 					"customer": customer,
 					"price_list_rate": float(p["price"]),
-					"valid_from": valid_from,
-					"valid_upto": valid_upto,
+					"valid_from": None,
+					"valid_upto": None,
 				}
 			)
 			doc.flags.ignore_permissions = True
-			doc.save() if existing else doc.insert()
+			doc.save() if match else doc.insert()
 
 
 def _to_float(v, default: float) -> float:
