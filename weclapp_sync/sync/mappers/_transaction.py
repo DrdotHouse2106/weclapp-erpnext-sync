@@ -74,7 +74,7 @@ class TransactionMapper(Mapper):
 			account = (info or {}).get(account_field) or default_acc
 			items.append(
 				{
-					"item_code": wc_item.get("articleNumber") or None,
+					"item_code": resolve_line_item(wc_item, title),
 					"item_name": title[:140],
 					"description": title,
 					"qty": self.item_qty(wc_item),
@@ -167,3 +167,50 @@ class TransactionMapper(Mapper):
 def _line_title(item: dict) -> str:
 	title = item.get("title") or item.get("name") or item.get("articleName")
 	return (title or "(Kein Titel)")[:140]
+
+
+FREE_TEXT_ITEM = "FREITEXT"
+
+
+def resolve_line_item(wc_item: dict, title: str) -> str:
+	"""ERPNext-`item_code` für eine Belegzeile.
+
+	- Mit `articleNumber` und vorhandenem Item -> dieses.
+	- Mit `articleNumber`, aber Item fehlt (Beleg älter als der Artikel-Import, oder Artikel
+	  in WeClapp gelöscht) -> Minimal-Item aus den Zeilendaten anlegen (`wc_id` aus `articleId`,
+	  damit ein späterer Artikel-Sync es über das Feld wiederfindet und vervollständigt).
+	- Ohne `articleNumber` (Freitext-Position) -> gemeinsames Platzhalter-Item `FREITEXT`.
+	"""
+	number = (wc_item.get("articleNumber") or "").strip()
+	if not number:
+		return _ensure_free_text_item()
+	if frappe.db.exists("Item", number):
+		return number
+
+	doc = frappe.new_doc("Item")
+	doc.item_code = number
+	doc.item_name = (title or number)[:140]
+	doc.description = title or number
+	doc.item_group = h.default_item_group()
+	doc.stock_uom = (
+		h.ensure_uom(wc_item.get("unitName")) if wc_item.get("unitName") else h.default_uom()
+	)
+	doc.is_stock_item = 0
+	if wc_item.get("articleId"):
+		doc.wc_id = str(wc_item["articleId"])
+	doc.flags.ignore_permissions = True
+	doc.insert(set_name=number)
+	return number
+
+
+def _ensure_free_text_item() -> str:
+	if not frappe.db.exists("Item", FREE_TEXT_ITEM):
+		doc = frappe.new_doc("Item")
+		doc.item_code = FREE_TEXT_ITEM
+		doc.item_name = "Freitext-Position"
+		doc.item_group = h.default_item_group()
+		doc.stock_uom = h.default_uom()
+		doc.is_stock_item = 0
+		doc.flags.ignore_permissions = True
+		doc.insert(set_name=FREE_TEXT_ITEM)
+	return FREE_TEXT_ITEM
