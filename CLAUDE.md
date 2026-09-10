@@ -206,6 +206,16 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   Doctypes (Quotation/Sales Order/Sales Invoice/Delivery Note/Purchase Order/Purchase Invoice/
   Purchase Receipt Item). ERPNext speichert den Einzelpreis dann exakt; Beträge bleiben 2-NK.
   Läuft in `run_setup()` (nach naming). Bestehende 99 Angebote: ein Re-Run korrigiert die Summen.
+- **Danach: Preislisten-Override.** Re-Run von AN-2026AN1099 war +8,40 zu hoch. Zwei Ursachen:
+  (1) **Stock Settings `auto_insert_price_list_rate_if_missing = 1`** - jede Belegzeile ohne
+  Item Price legte beim 1. Lauf eine in der Beleg-Preisliste ("Standard Selling") an; der 2.
+  Lauf las sie zurück und überschrieb den WeClapp-Zeilenpreis. Fix: `masters.setup_pricing_settings()`
+  setzt das Flag auf 0 (läuft immer in `run_setup`), + auf der Testinstanz die 338 Streu-Item-
+  Prices in "Standard Selling" gelöscht. (2) **WeClapp-Nullzeilen** (Zwischenüberschrift,
+  `netAmount==grossAmount==0`): ERPNext ersetzte rate 0 durch den Preislisten-Preis. Fix:
+  `_transaction._add_line` markiert sie `is_free_item=1` (erzwingt rate 0, kein Preis-Lookup),
+  setzt für alle Zeilen `price_list_rate=rate`+`discount_percentage=0`; Quotation-Header
+  `ignore_pricing_rule=1`.
 
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
