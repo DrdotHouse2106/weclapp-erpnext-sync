@@ -76,8 +76,10 @@ class SalesInvoiceMapper(TransactionMapper):
 		if existing_name and doc.docstatus == 1:
 			return existing_name
 
-		posting_date = h.date_from_ts(record.get("invoiceDate")) or frappe.utils.nowdate()
-		due_date = max(h.date_from_ts(record.get("dueDate")) or posting_date, posting_date)
+		posting_date = h.clamp_posting_date(h.date_from_ts(record.get("invoiceDate"))) or frappe.utils.nowdate()
+		due_date = max(
+			h.clamp_posting_date(h.date_from_ts(record.get("dueDate"))) or posting_date, posting_date
+		)
 
 		migration_terms = (
 			masters.MIGRATION_PAYMENT_TERMS_TEMPLATE

@@ -180,6 +180,24 @@ def default_currency() -> str:
 	return _settings().default_currency or "EUR"
 
 
+def clamp_posting_date(date_str: str | None) -> str | None:
+	"""Schützt vor kaputten WeClapp-Datumsangaben (Tippfehler „23" -> Jahr 0023): liegt das
+	Jahr außerhalb 2000..2100, wird auf den Beginn des frühesten aktiven Geschäftsjahres
+	geklemmt (sonst FiscalYearError)."""
+	if not date_str:
+		return date_str
+	try:
+		year = int(str(date_str)[:4])
+	except ValueError:
+		return date_str
+	if 2000 <= year <= 2100:
+		return date_str
+	fy = frappe.db.get_value(
+		"Fiscal Year", {"disabled": 0}, "year_start_date", order_by="year_start_date asc"
+	)
+	return str(fy) if fy else frappe.utils.nowdate()
+
+
 def default_warehouse() -> str | None:
 	"""Fallback-Lager: Settings-Feld -> Company-Standardlager -> irgendein aktives
 	Nicht-Gruppen-Lager. So scheitert ein Beleg ohne WeClapp-Lager nicht hart."""

@@ -162,3 +162,14 @@ def setup_pricing_settings() -> None:
 	if changed:
 		stock_settings.flags.ignore_permissions = True
 		stock_settings.save()
+
+	# WeClapp-Belege haben legitim negative Zeilen (Reduktions-/Ausgleichspositionen,
+	# Gutschriften). ERPNext lehnt negative Einzelpreise sonst ab.
+	for dt in ("Selling Settings", "Buying Settings"):
+		doc = frappe.get_single(dt)
+		if doc.meta.has_field("allow_negative_rates_for_items") and not doc.get(
+			"allow_negative_rates_for_items"
+		):
+			doc.allow_negative_rates_for_items = 1
+			doc.flags.ignore_permissions = True
+			doc.save()

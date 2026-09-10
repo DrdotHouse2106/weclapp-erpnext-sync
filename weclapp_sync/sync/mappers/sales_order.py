@@ -56,7 +56,7 @@ class SalesOrderMapper(TransactionMapper):
 		if existing_name and doc.docstatus == 1:
 			return existing_name
 
-		order_date = h.date_from_ts(record.get("orderDate")) or frappe.utils.nowdate()
+		order_date = h.clamp_posting_date(h.date_from_ts(record.get("orderDate"))) or frappe.utils.nowdate()
 		# WeClapp lässt `plannedShippingDate` vor dem Auftragsdatum zu, ERPNext nicht.
 		delivery_date = max(h.date_from_ts(record.get("plannedShippingDate")) or order_date, order_date)
 		warehouse = h.ensure_warehouse(record.get("warehouseName"))

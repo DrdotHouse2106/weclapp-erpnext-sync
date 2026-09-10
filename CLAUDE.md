@@ -236,8 +236,16 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
 - `_transaction.check_gross_total` bekam `negate`-Param.
 - WeClapp: 5326 Rechnungen. `salesInvoiceItems` + `shippingCostItems`. Typen STANDARD_INVOICE /
   CREDIT_NOTE. `netAmount <= 0` -> `should_skip` (Anomalie).
-- **Noch nicht getestet.** Feld-Mapping-Referenz + gelöste Fachprobleme: Vorgänger
-  invoice_migration.py + dessen CLAUDE.md (OSS-Konten, payment_terms-Falle).
+- Feld-Mapping-Referenz + gelöste Fachprobleme: Vorgänger invoice_migration.py + dessen CLAUDE.md.
+- **1. Testlauf: 5256 ok, 31 fail, 39 skip.**
+  - 29× „Einzelpreis muss positive Zahl sein" (Gutschriften + WeClapp-Reduktionszeilen wie
+    „Schwinge ausgeschlagen −40"). Fix: `masters.setup_pricing_settings()` setzt jetzt auch
+    `allow_negative_rates_for_items = 1` auf Selling + Buying Settings (Port von
+    `setup_negative_rate_settings`). Auf der Testinstanz per API gesetzt.
+  - 4× `FiscalYearError` „Buchungsdatum 31.12.**0023**" - WeClapp-Datumstippfehler („23" ->
+    Jahr 0023). Fix: `h.clamp_posting_date()` klemmt Jahr außerhalb 2000..2100 auf den Beginn
+    des frühesten Geschäftsjahres. In sales_invoice (posting/due) + sales_order (order_date).
+  - 39 skip = `netAmount <= 0` (Anomalien), korrekt.
 
 ### Increment 13 (2026-09-10): Auftrags-Mapper + API-Update + Belegnamen ohne Präfix
 - `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): Dokumentname =
