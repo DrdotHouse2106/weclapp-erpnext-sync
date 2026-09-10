@@ -10,7 +10,7 @@ from weclapp_sync.sync.settings import get_settings
 
 _QUEUE = "long"
 _JOB_ID = "weclapp_sync_delta"
-_STALE_HOURS = 6
+_STALE_HOURS = 1
 
 
 def enqueue_due_delta_sync() -> None:

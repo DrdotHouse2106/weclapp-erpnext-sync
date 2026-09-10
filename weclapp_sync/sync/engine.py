@@ -32,6 +32,11 @@ MODE_FULL = "Full Import"
 MODE_DELTA = "Delta Sync"
 
 
+def _abort_requested(run_name: str) -> bool:
+	"""Frisch aus der DB gelesen (der Button committet aus einem anderen Request)."""
+	return bool(frappe.db.get_value("WeClapp Sync Run", run_name, "abort_requested"))
+
+
 @dataclass
 class TypeResult:
 	key: str
@@ -99,6 +104,7 @@ def sync_object_type(
 
 	max_pages = int(get_settings().debug_max_pages_per_type or 0)
 	truncated = False
+	aborted = False
 
 	try:
 		page_no = 0
@@ -108,6 +114,9 @@ def sync_object_type(
 				continue
 			if max_pages and page_no > max_pages:
 				truncated = True
+				break
+			if _abort_requested(run_name):
+				aborted = True
 				break
 
 			for idx, record in enumerate(page):
@@ -129,6 +138,13 @@ def sync_object_type(
 
 			frappe.db.commit()
 			_save_progress(spec.key, run_name, page_no)
+
+		if aborted:
+			# Nutzer hat abgebrochen: KEIN Watermark (Typ unvollständig), Fortschritt
+			# bleibt gespeichert. Signalisiert der äußeren Schleife den Stopp.
+			result.status = "aborted"
+			result.message = "Abbruch angefordert - Lauf an der Seitengrenze gestoppt"
+			return result
 
 		if truncated:
 			# Test-Lauf mit Seitenbegrenzung: KEIN Watermark setzen (Typ ist nicht
@@ -173,6 +189,8 @@ def run_sync(mode: str, *, run_name: str | None = None) -> RunResult:
 			tr = sync_object_type(spec, mode=mode, run_name=run.name, client=client)
 			res.types.append(tr)
 			_append_run_type_summary(run, tr)
+			if tr.status == "aborted":
+				break
 	finally:
 		client.close()
 
@@ -213,7 +231,12 @@ def _create_run(mode: str):
 
 def _finish_run(run, res: RunResult) -> None:
 	run.reload()
-	run.status = "Completed" if res.total_failed == 0 else "Completed with errors"
+	if any(t.status == "aborted" for t in res.types):
+		run.status = "Aborted"
+	elif res.total_failed == 0:
+		run.status = "Completed"
+	else:
+		run.status = "Completed with errors"
 	run.finished_at = now_datetime()
 	run.records_processed = res.total_processed
 	run.records_failed = res.total_failed

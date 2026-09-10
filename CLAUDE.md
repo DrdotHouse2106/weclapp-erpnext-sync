@@ -219,6 +219,18 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
 - **Ergebnis nach allen Fixes:** 99/99 Angebote, alle geprüften Brutto-Summen cent-genau gegen
   WeClapp (296,75 / 1166,37 / 437,36 / 466,44 / 118,17). Die 1 "übersprungene" ist AN-2025AN1056
   = WeClapp-Angebot mit 0 Positionen (`should_skip` korrekt). **Angebots-Mapper verifiziert.**
+  Danach voller Angebots-Import erfolgreich durchgelaufen.
+
+### Increment 11 (2026-09-10): kontrollierter Abbruch für laufende Importe
+- Feld `abort_requested` (Check) + Status `Aborted` am *WeClapp Sync Run*; `weclapp_sync_run.js`
+  Button "Abbruch anfordern" (nur bei Status Running).
+- `engine.sync_object_type()`: prüft `_abort_requested(run_name)` an jeder Seitengrenze -> stoppt
+  kontrolliert (`result.status="aborted"`, kein Watermark, `progress_page` bleibt); `run_sync()`
+  bricht dann die Objekttyp-Schleife ab, `_finish_run()` setzt Status `Aborted`.
+- `scheduler._STALE_HOURS` 6 -> 1 (ein hart gekillter RQ-Job hängt sonst 6 h als "Running" und
+  blockiert neue Läufe; `recover_stale_runs` räumt ihn jetzt nach 1 h weg).
+- Hintergrund: RQ Job stoppen allein lässt den Run auf "Running" -> `start_full_import` und der
+  Scheduler denken, es läuft noch. Der Button ist der saubere Weg.
 
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
