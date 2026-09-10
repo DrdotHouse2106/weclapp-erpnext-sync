@@ -1,15 +1,15 @@
 """WeClapp customAttributes (Zusatzfelder / Freifelder) -> ERPNext Custom Fields.
 
-Welche Attribute übertragen werden und in welches ERPNext-Feld, steht in der **UI-Tabelle**
+Welche Attribute übertragen werden und in welches ERPNext-Feld, steht in der UI-Tabelle
 „Zusatzfeld-Mapping" der WeClapp Settings (siehe setup/custom_attribute_fields.py). `resolve()`
-bekommt daraus die `field_map` (nur aktivierte Zeilen für den jeweiligen Ziel-Doctype) - kein
-im Code kuratierter Feldkatalog mehr.
+bekommt daraus die `field_map` (nur aktivierte Zeilen für den jeweiligen Ziel-Doctype).
 
-Nicht (mehr) hier: das Anlegen der Felder - das macht `apply_custom_attribute_fields()` über
-den Button in den Settings bzw. `run_setup()`.
+Das Anlegen der Felder macht `apply_custom_attribute_fields()` (Button / run_setup).
 """
 
 from __future__ import annotations
+
+from weclapp_sync import erpnext_helpers as h
 
 
 def _raw_value(ca: dict, attr_def: dict):
@@ -17,9 +17,15 @@ def _raw_value(ca: dict, attr_def: dict):
 	if atype == "BOOLEAN":
 		return 1 if ca.get("booleanValue") else 0
 	if atype == "DECIMAL":
-		return ca.get("numberValue")
+		val = ca.get("numberValue")
+		try:
+			return float(val) if val is not None else None
+		except (TypeError, ValueError):
+			return None
 	if atype in ("STRING", "LARGE_TEXT", "URL"):
 		return ca.get("stringValue")
+	if atype == "DATE":
+		return h.date_from_ts(ca.get("dateValue") or ca.get("dateTimeValue"))
 	if atype == "LIST":
 		value_id = ca.get("selectedValueId")
 		if value_id:
@@ -35,12 +41,10 @@ def _raw_value(ca: dict, attr_def: dict):
 
 
 def resolve(wc_record: dict, definitions: dict, field_map: dict) -> dict:
-	"""Gibt {fieldname: value} für alle customAttributes zurück, die im „Zusatzfeld-Mapping"
-	aktiviert sind.
+	"""{fieldname: value} für alle im „Zusatzfeld-Mapping" aktivierten customAttributes.
 
-	`definitions`: id -> customAttributeDefinition (siehe Mapper.custom_attribute_definitions()).
-	`field_map`: attributeKey -> {"fieldname": str, "fieldtype": str} (siehe
-	setup/custom_attribute_fields.field_map()).
+	`definitions`: id -> customAttributeDefinition.
+	`field_map`: attributeKey -> {"fieldname": str, "fieldtype": str}.
 	"""
 	if not wc_record.get("customAttributes") or not field_map:
 		return {}
@@ -58,11 +62,14 @@ def resolve(wc_record: dict, definitions: dict, field_map: dict) -> dict:
 			continue
 
 		if isinstance(value, list):
-			if mapping["fieldtype"] == "Table MultiSelect":
-				continue  # TODO: Child-Table-Zeilen
-			value = ", ".join(v for v in value if v)
-			if not value:
+			clean = [v for v in value if v]
+			if not clean:
 				continue
+			if mapping["fieldtype"] == "Table MultiSelect":
+				out[mapping["fieldname"]] = [{"wert": v} for v in clean]
+			else:
+				out[mapping["fieldname"]] = ", ".join(clean)
+			continue
 
 		out[mapping["fieldname"]] = value
 	return out

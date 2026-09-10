@@ -91,14 +91,15 @@
    "fieldname": "fieldtype",
    "fieldtype": "Select",
    "label": "Feldtyp",
-   "options": "Data\nSmall Text\nLong Text\nText Editor\nCheck\nInt\nFloat\nSelect\nDate\nDatetime"
+   "options": "Data\nSmall Text\nLong Text\nText Editor\nCheck\nInt\nFloat\nCurrency\nPercent\nSelect\nTable MultiSelect\nDate\nDatetime"
   },
   {
-   "depends_on": "eval:doc.fieldtype=='Select'",
-   "description": "Eine Auswahl je Zeile (nur bei Feldtyp „Select“). Vorbelegt aus den WeClapp-Auswahlwerten.",
+   "depends_on": "eval:['Select','Table MultiSelect'].includes(doc.fieldtype)",
+   "description": "Auswahlwerte (eine je Zeile) für „Select“ / „Table MultiSelect“. Wird bei jedem „Laden“ frisch aus WeClapp übernommen.",
    "fieldname": "field_options",
    "fieldtype": "Small Text",
-   "label": "Auswahlwerte"
+   "label": "Auswahlwerte",
+   "read_only": 1
   },
   {
    "columns": 2,
@@ -112,7 +113,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-10 17:00:00.000000",
+ "modified": "2026-09-10 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "WeClapp Sync",
  "name": "WeClapp Custom Attribute Mapping",

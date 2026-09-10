@@ -1,17 +1,18 @@
 """WeClapp-Zusatzfelder (customAttributes) -> ERPNext Custom Fields, **UI-gesteuert**.
 
 Statt einer im Code kuratierten Liste (so machte es der Vorgänger-Importer, `setup.py`
-`setup_custom_fields`) pflegt der Nutzer die Zuordnung in der Tabelle „Zusatzfeld-Mapping"
-in den WeClapp Settings:
+`setup_custom_fields` / `setup_multiselect_fields`) pflegt der Nutzer die Zuordnung in der
+Tabelle „Zusatzfeld-Mapping" (Reiter „Zusatzfelder" der WeClapp Settings):
 
-- Button „Zusatzfelder aus WeClapp laden" (`weclapp_settings.populate_custom_attribute_mapping`)
-  holt alle `customAttributeDefinition` und legt je (Attribut, WeClapp-Objekt) eine Zeile an -
-  mit lesbarer Bezeichnung, WeClapp-Typ, Zielfeldname (vorbelegt) und Feld-Status.
-- Der Nutzer hakt an, welche importiert werden sollen, passt Feldname/Feldtyp an oder zeigt
-  auf ein bestehendes Feld.
-- Button „Ausgewählte Felder anlegen" ruft `apply_custom_attribute_fields()` - legt die
-  fehlenden Custom Fields an (unter einer eigenen Sektion „WeClapp Zusatzfelder") und
-  aktualisiert den Feld-Status.
+- Button „Zusatzfelder aus WeClapp laden" (`populate_custom_attribute_mapping`): holt alle
+  `customAttributeDefinition` (read-only) und legt je (Attribut, WeClapp-Objekt) eine Zeile an -
+  lesbare Bezeichnung, WeClapp-Typ, Gruppe, Ziel-Doctype(s), vorbelegter Feldname/Feldtyp,
+  Feld-Status. Nutzer-Auswahl bleibt bei erneutem Laden erhalten.
+- Button „Ausgewählte Felder anlegen" (`apply_custom_attribute_fields`): legt je aktivierter
+  Zeile das fehlende Custom Field an - gruppiert in Sektionen nach der WeClapp-Gruppe, unter
+  einem Reiter „WeClapp Zusatzfelder". MULTISELECT_LIST -> echtes „Table MultiSelect" (mit
+  automatisch angelegtem Werte-Doctype). Schreibt den Feld-Status zurück. Läuft auch in
+  `run_setup()` (idempotent).
 
 `sync/mappers/_custom_attributes.resolve()` liest dieselbe Tabelle: nur aktivierte Zeilen
 werden beim Sync übertragen.
@@ -25,7 +26,7 @@ import frappe
 
 from weclapp_sync import erpnext_helpers as h
 
-# Umlaute / Akzente -> ASCII, damit der Feldname aus der Bezeichnung lesbar bleibt.
+# Umlaute / Akzente -> ASCII, damit Feld-/Doctype-Namen aus der Bezeichnung lesbar bleiben.
 _TRANSLIT = str.maketrans(
 	{
 		"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
@@ -39,20 +40,10 @@ _TRANSLIT = str.maketrans(
 	}
 )
 
-
-def suggested_fieldname(label: str | None, attribute_key: str) -> str:
-	"""ERPNext-Feldname aus der lesbaren WeClapp-Bezeichnung (z.B. „Citroën Originalnummer"
-	-> `citroen_originalnummer`). Nur wenn daraus nichts Brauchbares wird, Fallback auf den
-	technischen attributeKey."""
-	slug = re.sub(r"[^a-z0-9]+", "_", (label or "").translate(_TRANSLIT).lower()).strip("_")[:120]
-	if slug and not slug[0].isdigit():
-		return slug
-	return h.custom_fieldname(attribute_key)
-
 # WeClapp-Entity (customAttributeDefinition.entities[]) -> ERPNext-Zieldoctype(s).
 WC_ENTITY_DOCTYPES: dict[str, list[str]] = {
 	"article": ["Item"],
-	"party": ["Customer", "Supplier", "Contact"],
+	"party": ["Customer", "Supplier"],
 	"customer": ["Customer"],
 	"supplier": ["Supplier"],
 	"salesOrder": ["Sales Order"],
@@ -74,13 +65,24 @@ ATTR_TYPE_TO_FIELDTYPE: dict[str, str] = {
 	"STRING": "Data",
 	"LARGE_TEXT": "Small Text",
 	"URL": "Data",
-	"LIST": "Select",
-	"MULTISELECT_LIST": "Small Text",
 	"DATE": "Date",
+	"LIST": "Select",
+	"MULTISELECT_LIST": "Table MultiSelect",
 }
 
-_SECTION_FIELDNAME = "wc_zusatzfelder_sektion"
-_SECTION_LABEL = "WeClapp Zusatzfelder"
+_TAB_FIELDNAME = "wc_zusatzfelder_tab"
+_TAB_LABEL = "WeClapp Zusatzfelder"
+_NO_GROUP = "Weitere"
+
+
+def suggested_fieldname(label: str | None, attribute_key: str) -> str:
+	"""ERPNext-Feldname aus der lesbaren WeClapp-Bezeichnung („Citroën Originalnummer"
+	-> `citroen_originalnummer`). Fallback auf den technischen attributeKey, wenn daraus
+	nichts Brauchbares wird."""
+	slug = re.sub(r"[^a-z0-9]+", "_", (label or "").translate(_TRANSLIT).lower()).strip("_")[:120]
+	if slug and not slug[0].isdigit():
+		return slug
+	return h.custom_fieldname(attribute_key)
 
 
 def entity_doctypes(entity: str | None) -> list[str]:
@@ -99,8 +101,9 @@ def _selectable_values(attr_def: dict) -> str:
 # --------------------------------------------------------------------------- Mapping-Tabelle füllen
 def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 	"""Baut die Tabelle `custom_attribute_mappings` aus den WeClapp-Definitionen neu auf.
-	Bestehende Nutzer-Auswahl (enabled / target_fieldname / fieldtype / field_options) bleibt
-	erhalten. Rückgabe: (gesamt, davon neu)."""
+	Nutzer-Auswahl (enabled / target_fieldname / fieldtype) bleibt erhalten; `field_options`
+	wird immer frisch aus WeClapp übernommen (Auswahlwerte sind WeClapp-Daten, keine Auswahl).
+	Rückgabe: (gesamt, davon neu)."""
 	existing = {
 		(r.wc_attribute_key, r.wc_entity): r for r in settings.get("custom_attribute_mappings") or []
 	}
@@ -119,13 +122,9 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 		for entity in d.get("entities") or []:
 			targets = entity_doctypes(entity)
 			prev = existing.get((key, entity))
-			# Nutzer-Feldname behalten - außer es ist noch eine der Auto-Vorbelegungen
-			# (dann auf das aktuelle Schema = aus der Bezeichnung heben).
 			prev_fn = (prev.target_fieldname or "").strip() if prev else ""
-			if prev_fn and prev_fn not in (suggested, h.custom_fieldname(key)):
-				fieldname = prev_fn
-			else:
-				fieldname = suggested
+			# Nutzer-Feldname behalten - außer es ist noch eine Auto-Vorbelegung.
+			fieldname = prev_fn if prev_fn and prev_fn not in (suggested, h.custom_fieldname(key)) else suggested
 			rows.append(
 				{
 					"wc_attribute_key": key,
@@ -137,7 +136,7 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 					"enabled": prev.enabled if prev else 0,
 					"target_fieldname": fieldname,
 					"fieldtype": (prev.fieldtype if prev and prev.fieldtype else default_fieldtype(atype)),
-					"field_options": (prev.field_options if prev and prev.field_options else options),
+					"field_options": options,
 					"field_status": _field_status(targets, fieldname),
 				}
 			)
@@ -152,6 +151,8 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 def _field_status(target_doctypes: list[str], fieldname: str) -> str:
 	if not target_doctypes:
 		return "kein Ziel-Doctype"
+	if not fieldname:
+		return "kein Feldname"
 	present = [dt for dt in target_doctypes if _has_field(dt, fieldname)]
 	if not present:
 		return "fehlt"
@@ -167,10 +168,61 @@ def _has_field(doctype: str, fieldname: str) -> bool:
 		return False
 
 
+# --------------------------------------------------------------------------- MULTISELECT-Doctypes
+def _ms_value_doctype(label: str, key: str) -> tuple[str, str]:
+	"""(Master-Doctype, Child-Doctype) für ein MULTISELECT_LIST-Zusatzfeld."""
+	base = re.sub(r"[^A-Za-z0-9 ()/_-]", "", (label or key).translate(_TRANSLIT)).strip()
+	base = re.sub(r"\s+", " ", base)[:44].strip() or h.custom_fieldname(key)
+	master = f"WC ZF {base}"
+	return master, f"{master} Eintrag"
+
+
+def _ensure_ms_doctypes(master: str, child: str) -> None:
+	if not frappe.db.exists("DocType", master):
+		frappe.get_doc(
+			{
+				"doctype": "DocType",
+				"name": master,
+				"module": "WeClapp Sync",
+				"custom": 1,
+				"naming_rule": "By fieldname",
+				"autoname": "field:wert",
+				"fields": [
+					{"fieldname": "wert", "fieldtype": "Data", "label": "Wert", "reqd": 1, "unique": 1, "in_list_view": 1}
+				],
+				"permissions": [
+					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+				],
+			}
+		).insert(ignore_permissions=True)
+	if not frappe.db.exists("DocType", child):
+		frappe.get_doc(
+			{
+				"doctype": "DocType",
+				"name": child,
+				"module": "WeClapp Sync",
+				"custom": 1,
+				"istable": 1,
+				"fields": [
+					{"fieldname": "wert", "fieldtype": "Link", "options": master, "label": "Wert", "reqd": 1, "in_list_view": 1}
+				],
+				"permissions": [],
+			}
+		).insert(ignore_permissions=True)
+
+
+def _sync_ms_values(master: str, values: list[str]) -> None:
+	for v in values:
+		v = (v or "").strip()
+		if v and not frappe.db.exists(master, v):
+			frappe.get_doc({"doctype": master, "wert": v}).insert(ignore_permissions=True)
+
+
 # --------------------------------------------------------------------------- Felder anlegen
 def apply_custom_attribute_fields() -> dict:
-	"""Legt für alle aktivierten Mapping-Zeilen die fehlenden Custom Fields an und schreibt
-	den Feld-Status zurück. Idempotent."""
+	"""Legt für alle aktivierten Mapping-Zeilen die fehlenden Custom Fields an (in Gruppen-
+	Sektionen unter einem Reiter „WeClapp Zusatzfelder"), MULTISELECT als „Table MultiSelect"
+	mit eigenem Werte-Doctype. Schreibt den Feld-Status zurück. Idempotent."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 	settings = frappe.get_single("WeClapp Settings")
@@ -178,78 +230,106 @@ def apply_custom_attribute_fields() -> dict:
 	if not rows_all:
 		return {"created": 0, "enabled_rows": 0, "doctypes": []}
 
-	per_doctype: dict[str, list[dict]] = {}
-	touched_rows: list = []
+	# je Doctype: {gruppe: [Feld-Definitionen]}
+	by_doctype: dict[str, dict[str, list[dict]]] = {}
 
-	for row in settings.get("custom_attribute_mappings") or []:
+	for row in rows_all:
 		if not row.enabled:
 			continue
 		fieldname = (row.target_fieldname or "").strip()
 		if not fieldname:
 			continue
-		targets = entity_doctypes(row.wc_entity)
-		for doctype in targets:
+
+		options = None
+		if row.fieldtype == "Table MultiSelect":
+			master, child = _ms_value_doctype(row.wc_label, row.wc_attribute_key)
+			_ensure_ms_doctypes(master, child)
+			_sync_ms_values(master, (row.field_options or "").splitlines())
+			options = child
+		elif row.fieldtype == "Select" and row.field_options:
+			options = "\n" + row.field_options.strip()
+
+		group = (row.wc_group or "").strip() or _NO_GROUP
+		for doctype in entity_doctypes(row.wc_entity):
 			if _has_field(doctype, fieldname):
 				continue
-			per_doctype.setdefault(doctype, [])
-			# eigene Sammel-Sektion je Doctype (einmal)
-			if not any(f["fieldname"] == _SECTION_FIELDNAME for f in per_doctype[doctype]) and not _has_field(
-				doctype, _SECTION_FIELDNAME
-			):
-				per_doctype[doctype].append(
-					{
-						"fieldname": _SECTION_FIELDNAME,
-						"label": _SECTION_LABEL,
-						"fieldtype": "Section Break",
-						"collapsible": 1,
-						"insert_after": _last_field(doctype),
-					}
-				)
-			per_doctype[doctype].append(_field_def(row, fieldname))
-		touched_rows.append(row)
+			by_doctype.setdefault(doctype, {}).setdefault(group, []).append(
+				_field_def(row, fieldname, options)
+			)
 
 	created = 0
-	if per_doctype:
-		create_custom_fields(per_doctype, ignore_validate=True)
-		created = sum(len(v) for v in per_doctype.values())
+	for doctype, groups in by_doctype.items():
+		fields = _layout(doctype, groups)
+		if fields:
+			create_custom_fields({doctype: fields}, ignore_validate=True)
+			created += len(fields)
 
-	# Status aktualisieren (alle Zeilen, nicht nur die angefassten)
-	for row in settings.get("custom_attribute_mappings") or []:
-		row.field_status = _field_status(
-			entity_doctypes(row.wc_entity), (row.target_fieldname or "").strip()
-		)
+	# Feld-Status aller Zeilen aktualisieren
+	for row in rows_all:
+		row.field_status = _field_status(entity_doctypes(row.wc_entity), (row.target_fieldname or "").strip())
 	settings.flags.ignore_permissions = True
 	settings.save()
 	frappe.clear_cache()
 
-	enabled = sum(1 for r in settings.get("custom_attribute_mappings") or [] if r.enabled)
-	return {"created": created, "enabled_rows": enabled, "doctypes": sorted(per_doctype)}
+	enabled = sum(1 for r in rows_all if r.enabled)
+	return {"created": created, "enabled_rows": enabled, "doctypes": sorted(by_doctype)}
 
 
-def _field_def(row, fieldname: str) -> dict:
+def _layout(doctype: str, groups: dict[str, list[dict]]) -> list[dict]:
+	"""Baut die Feldliste für `create_custom_fields`: ein Tab „WeClapp Zusatzfelder", darin je
+	WeClapp-Gruppe eine Sektion, dann die Felder. `insert_after` wird durchgekettet."""
+	out: list[dict] = []
+	anchor = _last_field(doctype)
+
+	if not _has_field(doctype, _TAB_FIELDNAME):
+		out.append(
+			{"fieldname": _TAB_FIELDNAME, "label": _TAB_LABEL, "fieldtype": "Tab Break", "insert_after": anchor}
+		)
+		anchor = _TAB_FIELDNAME
+	else:
+		anchor = _last_field(doctype)
+
+	ordered = sorted(groups, key=lambda g: (g == _NO_GROUP, g.lower()))
+	for group in ordered:
+		sec = f"wc_zf_sec_{_slug(group)}"
+		if not _has_field(doctype, sec):
+			out.append(
+				{"fieldname": sec, "label": group, "fieldtype": "Section Break", "insert_after": anchor}
+			)
+		anchor = sec
+		for fd in groups[group]:
+			fd["insert_after"] = anchor
+			out.append(fd)
+			anchor = fd["fieldname"]
+	return out
+
+
+def _slug(text: str) -> str:
+	return re.sub(r"[^a-z0-9]+", "_", (text or "").translate(_TRANSLIT).lower()).strip("_")[:60] or "x"
+
+
+def _field_def(row, fieldname: str, options: str | None) -> dict:
 	fd = {
 		"fieldname": fieldname,
 		"label": (row.wc_label or fieldname)[:140],
 		"fieldtype": row.fieldtype or "Data",
-		"insert_after": _SECTION_FIELDNAME,
 		"description": f"WeClapp-Zusatzfeld: {row.wc_attribute_key}",
 		"translatable": 0,
 	}
-	if row.fieldtype == "Select" and row.field_options:
-		fd["options"] = "\n" + row.field_options.strip()
+	if options is not None:
+		fd["options"] = options
 	return fd
 
 
 def _last_field(doctype: str) -> str:
-	meta = frappe.get_meta(doctype)
-	fields = [f.fieldname for f in meta.fields]
+	fields = [f.fieldname for f in frappe.get_meta(doctype).fields]
 	return fields[-1] if fields else ""
 
 
 # --------------------------------------------------------------------------- fürs Sync lesen
 def field_map(target_doctype: str) -> dict[str, dict]:
-	"""{attributeKey: {"fieldname":..., "fieldtype":...}} für alle aktivierten Mapping-Zeilen,
-	deren Ziel-Doctype `target_doctype` enthält. Vom Mapper pro Lauf einmal geladen."""
+	"""{attributeKey: {"fieldname", "fieldtype"}} für alle aktivierten Mapping-Zeilen, deren
+	Ziel-Doctype `target_doctype` enthält. Vom Mapper pro Lauf einmal geladen."""
 	rows = frappe.get_all(
 		"WeClapp Custom Attribute Mapping",
 		filters={"parenttype": "WeClapp Settings", "enabled": 1},

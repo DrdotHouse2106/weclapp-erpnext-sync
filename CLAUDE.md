@@ -243,9 +243,20 @@ Hier stattdessen **UI-gesteuert**:
 - WeClapp `customAttributeDefinition`-Bestand: 99 Defs (article 76, party 19, salesOrder 4,
   shipment 4, salesInvoice 2, salesOrderItem 1). Typen: STRING 38, BOOLEAN 30, LIST 10,
   MULTISELECT_LIST 9, LARGE_TEXT 8, DECIMAL 3, URL 1. Alle mit `label`, viele mit `groupName`.
-- **Offen:** MULTISELECT_LIST landet als ", "-Text (Table MultiSelect + Options-Child = TODO);
-  Item-"Freifelder"-Tab-Layout aus dem Vorgänger (`ITEM_FREIFELDER_LAYOUT`) nicht portiert
-  (alle Felder unter einer Sammel-Sektion statt handmodelliertem Tab).
+- **MULTISELECT_LIST -> „Table MultiSelect"** (Increment 12b): je aktiviertem Multiselect-
+  Zusatzfeld werden zwei Custom-DocTypes generiert - Master `WC ZF <Label>` (Data-Feld `wert`,
+  unique) + Child `WC ZF <Label> Eintrag` (Link `wert` -> Master). `_ensure_ms_doctypes` /
+  `_sync_ms_values` (füllt Master aus `field_options` = WeClapp `selectableValues`).
+  `resolve()` gibt für Table MultiSelect `[{"wert": v}, ...]` zurück. Feldtyp im Mapping
+  umstellbar (dann Fallback ", "-Text).
+- **Layout:** `apply_custom_attribute_fields()` legt je Ziel-Doctype einen Reiter „WeClapp
+  Zusatzfelder" an, darin je WeClapp-`groupName` eine Sektion (statt einer flachen Sammel-
+  Sektion). `_raw_value` deckt jetzt DATE (`dateValue`) + DECIMAL-als-String ab.
+- **Offen am Zusatzfeld-Mapper:** Belegzeilen-Entities (`salesOrderItem` etc.) - Felder werden
+  angelegt, aber `_transaction.build_lines` ruft `ca.resolve` noch nicht pro Position;
+  `crmEvent` (kein Mapper); neue WeClapp-Auswahlwerte brauchen erneutes „Laden" + „Anlegen",
+  sonst scheitert der einzelne Datensatz (Link-Validierung, wird geloggt); generierte
+  MS-DocTypes werden bei Deinstallation nicht aufgeräumt.
 - **Feldname aus der Bezeichnung:** `suggested_fieldname(label, key)` slugifiziert die lesbare
   WeClapp-Bezeichnung (Umlaut-Translit) -> `citroen_originalnummer` statt `cf_4437i966...`.
   Fallback auf den technischen `attributeKey` nur, wenn der Slug leer ist / mit Ziffer beginnt.
