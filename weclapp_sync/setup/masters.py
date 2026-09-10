@@ -143,3 +143,22 @@ def setup_uom_settings() -> None:
 	""""Nos" darf gebrochene Mengen haben - WeClapp erzwingt keine ganzzahligen Stückzahlen."""
 	if frappe.db.exists("UOM", "Nos"):
 		frappe.db.set_value("UOM", "Nos", "must_be_whole_number", 0)
+
+
+def setup_pricing_settings() -> None:
+	"""WeClapp ist die Preis-Autorität. ERPNext soll aus importierten Belegen KEINE Item Prices
+	auto-anlegen (`auto_insert_price_list_rate_if_missing`) - sonst legt jede Belegzeile ohne
+	vorhandene Item Price eine in der Beleg-Preisliste an, die beim nächsten Lauf den aus
+	WeClapp übergebenen Zeilenpreis überschreibt."""
+	stock_settings = frappe.get_single("Stock Settings")
+	changed = False
+	for field, value in (
+		("auto_insert_price_list_rate_if_missing", 0),
+		("update_existing_price_list_rate", 0),
+	):
+		if stock_settings.get(field) != value:
+			stock_settings.set(field, value)
+			changed = True
+	if changed:
+		stock_settings.flags.ignore_permissions = True
+		stock_settings.save()

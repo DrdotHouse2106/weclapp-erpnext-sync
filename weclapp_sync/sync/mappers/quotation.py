@@ -56,6 +56,7 @@ class QuotationMapper(TransactionMapper):
 				"transaction_date": h.date_from_ts(record.get("quotationDate")) or frappe.utils.nowdate(),
 				"valid_till": h.date_from_ts(record.get("validTo")),
 				"order_type": "Sales",
+				"ignore_pricing_rule": 1,
 				"apply_discount_on": "Net Total",
 				"discount_amount": self.header_discount_amount(record),
 				"wc_id": str(record.get("id") or "") or None,

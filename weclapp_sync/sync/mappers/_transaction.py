@@ -72,13 +72,24 @@ class TransactionMapper(Mapper):
 		def _add_line(wc_item: dict, *, title: str, header_discountable: bool):
 			info = self.tax_info(wc_item.get("taxId"))
 			account = (info or {}).get(account_field) or default_acc
+			rate = self.net_rate(wc_item)
+			# WeClapp-Nullzeilen (Zwischenüberschrift / Gratisposition): als "Free Item"
+			# markieren - ERPNext erzwingt dann rate 0 und zieht KEINEN Preislisten-Preis
+			# heran (sonst überschreibt eine (auto-angelegte) Item Price die 0).
+			is_free = (
+				float(wc_item.get("netAmount") or 0) == 0 and float(wc_item.get("grossAmount") or 0) == 0
+			)
 			items.append(
 				{
 					"item_code": resolve_line_item(wc_item, title),
 					"item_name": title[:140],
 					"description": title,
 					"qty": self.item_qty(wc_item),
-					"rate": self.net_rate(wc_item),
+					"rate": rate,
+					"price_list_rate": rate,
+					"discount_percentage": 0,
+					"margin_type": "",
+					"is_free_item": 1 if is_free else 0,
 					"uom": h.ensure_uom(wc_item.get("unitName")) if wc_item.get("unitName") else default_uom,
 					"cost_center": cost_center,
 					account_field: account,

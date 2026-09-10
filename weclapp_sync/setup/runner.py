@@ -27,9 +27,17 @@ def run_setup(*, full: bool = False) -> None:
 	apply_naming()
 	apply_precision()
 
-	if full:
-		from weclapp_sync.setup import masters
+	from weclapp_sync.setup import masters
 
+	# Immer (auch ohne Vollimport): ERPNext darf aus Belegen keine Item Prices auto-anlegen.
+	try:
+		masters.setup_pricing_settings()
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(title="WeClapp Setup: setup_pricing_settings", message=frappe.get_traceback())
+
+	if full:
 		for step in (masters.setup_uom_settings, masters.setup_payment_terms, masters.setup_fiscal_years):
 			try:
 				step()
