@@ -125,6 +125,7 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 			prev_fn = (prev.target_fieldname or "").strip() if prev else ""
 			# Nutzer-Feldname behalten - außer es ist noch eine Auto-Vorbelegung.
 			fieldname = prev_fn if prev_fn and prev_fn not in (suggested, h.custom_fieldname(key)) else suggested
+			prev_label = (prev.target_label or "").strip() if prev else ""
 			rows.append(
 				{
 					"wc_attribute_key": key,
@@ -134,6 +135,7 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 					"wc_group": group,
 					"target_doctype": ", ".join(targets) or "(unbekanntes Objekt)",
 					"enabled": prev.enabled if prev else 0,
+					"target_label": prev_label if (prev_label and prev_label != label) else label,
 					"target_fieldname": fieldname,
 					"fieldtype": (prev.fieldtype if prev and prev.fieldtype else default_fieldtype(atype)),
 					"field_options": options,
@@ -311,7 +313,7 @@ def _slug(text: str) -> str:
 def _field_def(row, fieldname: str, options: str | None) -> dict:
 	fd = {
 		"fieldname": fieldname,
-		"label": (row.wc_label or fieldname)[:140],
+		"label": ((row.target_label or "").strip() or row.wc_label or fieldname)[:140],
 		"fieldtype": row.fieldtype or "Data",
 		"description": f"WeClapp-Zusatzfeld: {row.wc_attribute_key}",
 		"translatable": 0,

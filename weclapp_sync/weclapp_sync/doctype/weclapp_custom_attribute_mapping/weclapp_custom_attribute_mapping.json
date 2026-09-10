@@ -13,6 +13,7 @@
   "wc_attribute_type",
   "wc_group",
   "column_break_1",
+  "target_label",
   "target_fieldname",
   "fieldtype",
   "field_options",
@@ -79,7 +80,15 @@
   },
   {
    "columns": 3,
-   "description": "ERPNext-Feldname. Vorbelegt aus dem WC-Key; kann auf ein bestehendes (Custom-)Feld zeigen.",
+   "description": "So heißt das Feld im ERPNext-Formular. Vorbelegt aus der WeClapp-Bezeichnung, frei änderbar.",
+   "fieldname": "target_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "ERPNext-Feld-Label"
+  },
+  {
+   "columns": 2,
+   "description": "Technischer Feldname (keine Leerzeichen/Umlaute). Vorbelegt aus der Bezeichnung; kann auf ein bestehendes (Custom-)Feld zeigen.",
    "fieldname": "target_fieldname",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -113,7 +122,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-10 19:00:00.000000",
+ "modified": "2026-09-10 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "WeClapp Sync",
  "name": "WeClapp Custom Attribute Mapping",
