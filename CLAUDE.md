@@ -292,6 +292,11 @@ Hier stattdessen **UI-gesteuert**:
   Zusatzfeld: <key>".
 - **WeClapp Settings in Reiter aufgeteilt** (Tab Break): „Verbindung & Sync" / „Mapping-
   Standardwerte" / „Preiskanäle" / „Steuer & Konten" / „Zusatzfelder".
+- **Editierbares `target_label`** (Spalte „ERPNext-Feld-Label") + Grid-Button „Vorhandenes
+  Feld zuordnen …" (`weclapp_settings.js` `assign_existing_field`): Dialog mit Ziel-Doctype +
+  Feldauswahl aus allen vorhandenen Standard-/Custom-Feldern -> setzt
+  target_fieldname/target_label/fieldtype. Zeigt ein WeClapp-Attribut auf ein bestehendes
+  Feld, wird beim „Anlegen" nichts Neues erzeugt (Status „vorhanden").
 
 ### Increment 11 (2026-09-10): kontrollierter Abbruch für laufende Importe
 - Feld `abort_requested` (Check) + Status `Aborted` am *WeClapp Sync Run*; `weclapp_sync_run.js`
