@@ -246,6 +246,13 @@ Hier stattdessen **UI-gesteuert**:
 - **Offen:** MULTISELECT_LIST landet als ", "-Text (Table MultiSelect + Options-Child = TODO);
   Item-"Freifelder"-Tab-Layout aus dem Vorgänger (`ITEM_FREIFELDER_LAYOUT`) nicht portiert
   (alle Felder unter einer Sammel-Sektion statt handmodelliertem Tab).
+- **Feldname aus der Bezeichnung:** `suggested_fieldname(label, key)` slugifiziert die lesbare
+  WeClapp-Bezeichnung (Umlaut-Translit) -> `citroen_originalnummer` statt `cf_4437i966...`.
+  Fallback auf den technischen `attributeKey` nur, wenn der Slug leer ist / mit Ziffer beginnt.
+  Das ERPNext-Feld-**Label** ist die volle WeClapp-Bezeichnung, `description` = "WeClapp-
+  Zusatzfeld: <key>".
+- **WeClapp Settings in Reiter aufgeteilt** (Tab Break): „Verbindung & Sync" / „Mapping-
+  Standardwerte" / „Preiskanäle" / „Steuer & Konten" / „Zusatzfelder".
 
 ### Increment 11 (2026-09-10): kontrollierter Abbruch für laufende Importe
 - Feld `abort_requested` (Check) + Status `Aborted` am *WeClapp Sync Run*; `weclapp_sync_run.js`

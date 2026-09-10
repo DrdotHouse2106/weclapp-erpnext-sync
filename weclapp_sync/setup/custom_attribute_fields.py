@@ -19,9 +19,35 @@ werden beim Sync übertragen.
 
 from __future__ import annotations
 
+import re
+
 import frappe
 
 from weclapp_sync import erpnext_helpers as h
+
+# Umlaute / Akzente -> ASCII, damit der Feldname aus der Bezeichnung lesbar bleibt.
+_TRANSLIT = str.maketrans(
+	{
+		"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
+		"Ä": "ae", "Ö": "oe", "Ü": "ue",
+		"á": "a", "à": "a", "â": "a", "ã": "a", "å": "a",
+		"é": "e", "è": "e", "ê": "e", "ë": "e",
+		"í": "i", "ì": "i", "î": "i", "ï": "i",
+		"ó": "o", "ò": "o", "ô": "o", "õ": "o",
+		"ú": "u", "ù": "u", "û": "u",
+		"ç": "c", "ñ": "n",
+	}
+)
+
+
+def suggested_fieldname(label: str | None, attribute_key: str) -> str:
+	"""ERPNext-Feldname aus der lesbaren WeClapp-Bezeichnung (z.B. „Citroën Originalnummer"
+	-> `citroen_originalnummer`). Nur wenn daraus nichts Brauchbares wird, Fallback auf den
+	technischen attributeKey."""
+	slug = re.sub(r"[^a-z0-9]+", "_", (label or "").translate(_TRANSLIT).lower()).strip("_")[:120]
+	if slug and not slug[0].isdigit():
+		return slug
+	return h.custom_fieldname(attribute_key)
 
 # WeClapp-Entity (customAttributeDefinition.entities[]) -> ERPNext-Zieldoctype(s).
 WC_ENTITY_DOCTYPES: dict[str, list[str]] = {
@@ -92,6 +118,9 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 		for entity in d.get("entities") or []:
 			targets = entity_doctypes(entity)
 			prev = existing.get((key, entity))
+			fieldname = (
+				prev.target_fieldname if prev and prev.target_fieldname else suggested_fieldname(label, key)
+			)
 			rows.append(
 				{
 					"wc_attribute_key": key,
@@ -101,10 +130,10 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 					"wc_group": group,
 					"target_doctype": ", ".join(targets) or "(unbekanntes Objekt)",
 					"enabled": prev.enabled if prev else 0,
-					"target_fieldname": (prev.target_fieldname if prev and prev.target_fieldname else h.custom_fieldname(key)),
+					"target_fieldname": fieldname,
 					"fieldtype": (prev.fieldtype if prev and prev.fieldtype else default_fieldtype(atype)),
 					"field_options": (prev.field_options if prev and prev.field_options else options),
-					"field_status": _field_status(targets, (prev.target_fieldname if prev else None) or h.custom_fieldname(key)),
+					"field_status": _field_status(targets, fieldname),
 				}
 			)
 			if not prev:
@@ -198,6 +227,7 @@ def _field_def(row, fieldname: str) -> dict:
 		"label": (row.wc_label or fieldname)[:140],
 		"fieldtype": row.fieldtype or "Data",
 		"insert_after": _SECTION_FIELDNAME,
+		"description": f"WeClapp-Zusatzfeld: {row.wc_attribute_key}",
 		"translatable": 0,
 	}
 	if row.fieldtype == "Select" and row.field_options:

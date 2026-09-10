@@ -5,6 +5,7 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "tab_sync",
   "enabled",
   "section_connection",
   "weclapp_base_url",
@@ -27,6 +28,7 @@
   "run_full_import",
   "section_debug",
   "debug_max_pages_per_type",
+  "tab_mapping",
   "section_mapping_defaults",
   "mapping_defaults_help",
   "company",
@@ -41,10 +43,12 @@
   "default_item_group",
   "default_selling_price_list",
   "default_buying_price_list",
+  "tab_price_lists",
   "section_price_lists",
   "price_lists_help",
   "populate_price_list_mappings",
   "price_list_mappings",
+  "tab_tax",
   "section_accounts",
   "debtor_parent_account",
   "creditor_parent_account",
@@ -59,12 +63,38 @@
   "create_missing_tax_accounts",
   "populate_tax_mappings",
   "tax_mappings",
+  "tab_custom_attributes",
   "section_custom_attributes",
   "populate_custom_attribute_mappings",
   "apply_custom_attribute_fields",
   "custom_attribute_mappings"
  ],
  "fields": [
+  {
+   "fieldname": "tab_sync",
+   "fieldtype": "Tab Break",
+   "label": "Verbindung & Sync"
+  },
+  {
+   "fieldname": "tab_mapping",
+   "fieldtype": "Tab Break",
+   "label": "Mapping-Standardwerte"
+  },
+  {
+   "fieldname": "tab_price_lists",
+   "fieldtype": "Tab Break",
+   "label": "Preiskanäle"
+  },
+  {
+   "fieldname": "tab_tax",
+   "fieldtype": "Tab Break",
+   "label": "Steuer & Konten"
+  },
+  {
+   "fieldname": "tab_custom_attributes",
+   "fieldtype": "Tab Break",
+   "label": "Zusatzfelder"
+  },
   {
    "default": "0",
    "description": "Globaler Schalter. Ist er aus, läuft weder Delta-Sync noch Vollimport.",
@@ -198,8 +228,7 @@
   },
   {
    "fieldname": "section_mapping_defaults",
-   "fieldtype": "Section Break",
-   "label": "Mapping-Standardwerte"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "mapping_defaults_help",
@@ -287,8 +316,7 @@
   },
   {
    "fieldname": "section_price_lists",
-   "fieldtype": "Section Break",
-   "label": "Preiskanäle → Preislisten"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "price_lists_help",
@@ -392,8 +420,7 @@
   },
   {
    "fieldname": "section_custom_attributes",
-   "fieldtype": "Section Break",
-   "label": "Zusatzfelder (WeClapp customAttributes)"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "populate_custom_attribute_mappings",
@@ -416,7 +443,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-10 17:05:00.000000",
+ "modified": "2026-09-10 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "WeClapp Sync",
  "name": "WeClapp Settings",
