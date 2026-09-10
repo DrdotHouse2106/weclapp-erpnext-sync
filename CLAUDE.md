@@ -260,6 +260,11 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   bucketn jetzt **pro ERPNext-Konto** (nicht mehr pro `taxId`); nicht gemappte Steuern gehen
   aufs Fallback-Konto statt verloren. Nutzer sollte den Fallback auf `1767` (USt EG-Land) setzen.
 - **Verifiziert cent-genau:** 2026AU2289/2288, 11510 (= WeClapp `grossAmount`).
+- **3. Testlauf: 3541 ok, 3 fail, 1 skip.** 3 Rest-Fehler behoben: 2x `plannedShippingDate`
+  vor `orderDate` -> `delivery_date = max(plannedShippingDate, orderDate)`; 1x Negativ-Auftrag
+  (WeClapp-Retoure `netAmount < 0`, "Grand Total must be >= 0") -> `should_skip`. Die 1
+  Bruttoabweichung (2026AU2234) bleibt bis der Nutzer `default_sales_tax_account` = 1767 setzt.
+  **Auftrags-Mapper damit im Wesentlichen durch.**
 
 ### Increment 12 (2026-09-10): Zusatzfeld-Mapper (UI statt Code-Liste)
 Der Vorgänger-Importer hatte die customAttribute->Custom-Field-Zuordnung als kuratierte
