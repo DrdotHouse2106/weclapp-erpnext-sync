@@ -216,6 +216,9 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   `_transaction._add_line` markiert sie `is_free_item=1` (erzwingt rate 0, kein Preis-Lookup),
   setzt für alle Zeilen `price_list_rate=rate`+`discount_percentage=0`; Quotation-Header
   `ignore_pricing_rule=1`.
+- **Ergebnis nach allen Fixes:** 99/99 Angebote, alle geprüften Brutto-Summen cent-genau gegen
+  WeClapp (296,75 / 1166,37 / 437,36 / 466,44 / 118,17). Die 1 "übersprungene" ist AN-2025AN1056
+  = WeClapp-Angebot mit 0 Positionen (`should_skip` korrekt). **Angebots-Mapper verifiziert.**
 
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
