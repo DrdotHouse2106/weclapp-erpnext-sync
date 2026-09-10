@@ -315,7 +315,7 @@ def _field_def(row, fieldname: str, options: str | None) -> dict:
 		"fieldname": fieldname,
 		"label": ((row.target_label or "").strip() or row.wc_label or fieldname)[:140],
 		"fieldtype": row.fieldtype or "Data",
-		"description": f"WeClapp-Zusatzfeld: {row.wc_attribute_key}",
+		"description": "",  # bewusst leer - Herkunft steht im Zusatzfeld-Mapping, nicht am Feld
 		"translatable": 0,
 	}
 	if options is not None:
