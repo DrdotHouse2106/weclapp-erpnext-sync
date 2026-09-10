@@ -181,7 +181,17 @@ def default_currency() -> str:
 
 
 def default_warehouse() -> str | None:
-	return _settings().get("default_warehouse") or None
+	"""Fallback-Lager: Settings-Feld -> Company-Standardlager -> irgendein aktives
+	Nicht-Gruppen-Lager. So scheitert ein Beleg ohne WeClapp-Lager nicht hart."""
+	s = _settings()
+	wh = s.get("default_warehouse")
+	if wh:
+		return wh
+	if s.company:
+		cwh = frappe.db.get_value("Company", s.company, "default_warehouse")
+		if cwh:
+			return cwh
+	return frappe.db.get_value("Warehouse", {"is_group": 0, "disabled": 0}, "name")
 
 
 def ensure_warehouse(wc_name: str | None) -> str | None:
