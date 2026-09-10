@@ -88,7 +88,7 @@
   },
   {
    "columns": 2,
-   "description": "Technischer Feldname (keine Leerzeichen/Umlaute). Vorbelegt aus der Bezeichnung; kann auf ein bestehendes (Custom-)Feld zeigen.",
+   "description": "Technischer Feldname (keine Leerzeichen/Umlaute). Für ein bestehendes Feld: Zeile anhaken und Button „Vorhandenes Feld zuordnen …“ nutzen.",
    "fieldname": "target_fieldname",
    "fieldtype": "Data",
    "in_list_view": 1,
