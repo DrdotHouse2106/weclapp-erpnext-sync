@@ -72,7 +72,7 @@ class ArticleMapper(Mapper):
 			"manufacturer": h.ensure_manufacturer(record.get("manufacturerName")),
 			"manufacturer_part_no": record.get("manufacturerPartNumber") or None,
 			"country_of_origin": h.country_name(record.get("countryOfOriginCode")),
-			"barcodes": [{"barcode": record["ean"]}] if record.get("ean") else [],
+			"barcodes": self._barcodes(record),
 		}
 		# description/item_group nur bei Neuanlage - können später von anderen Integrationen
 		# (Shopware) mitgepflegt werden (siehe reference article_migration.py).
@@ -82,6 +82,20 @@ class ArticleMapper(Mapper):
 
 		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
 		return fields
+
+	@staticmethod
+	def _barcodes(record: dict) -> list[dict]:
+		"""EAN als Item Barcode - aber nur, wenn er nicht schon einem ANDEREN Artikel gehört.
+		ERPNext erzwingt Barcode-Eindeutigkeit; in WeClapp teilen sich vereinzelt mehrere
+		Artikel eine EAN (Varianten/Sets). Der erste Artikel bekommt den Barcode, die anderen
+		laufen ohne - besser als der Abbruch des ganzen Artikel-Upserts."""
+		ean = record.get("ean")
+		if not ean:
+			return []
+		owner = frappe.db.get_value("Item Barcode", {"barcode": ean}, "parent")
+		if owner and owner != record.get("articleNumber"):
+			return []
+		return [{"barcode": ean}]
 
 	def _channel_lists(self) -> dict:
 		if self._price_lists is None:
