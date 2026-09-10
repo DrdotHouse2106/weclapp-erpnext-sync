@@ -148,6 +148,25 @@ def _doc_email_fields() -> dict[str, list[dict]]:
 	return fields
 
 
+def _doc_link_fields() -> dict[str, list[dict]]:
+	"""Belegketten-Verweise (WeClapp-Herkunftsbeleg). Read-only, rein informativ - die echte
+	ERPNext-Verknüpfung (against_sales_order o.ä.) wird beim Migrationsimport nicht gesetzt."""
+	return {
+		"Sales Order": [
+			{
+				"fieldname": "wc_quotation",
+				"label": "Angebot (WeClapp)",
+				"fieldtype": "Link",
+				"options": "Quotation",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_last_modified",
+				"translatable": 0,
+			}
+		],
+	}
+
+
 def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 	out: dict[str, list[dict]] = {}
 	for part in parts:
@@ -159,5 +178,6 @@ def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 def apply_custom_fields() -> None:
 	"""Idempotent - create_custom_fields aktualisiert vorhandene Felder statt zu doppeln."""
 	create_custom_fields(
-		_merge(_wc_id_fields(), _extra_fields(), _doc_email_fields()), ignore_validate=True
+		_merge(_wc_id_fields(), _extra_fields(), _doc_email_fields(), _doc_link_fields()),
+		ignore_validate=True,
 	)

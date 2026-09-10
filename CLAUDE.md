@@ -221,6 +221,18 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   = WeClapp-Angebot mit 0 Positionen (`should_skip` korrekt). **Angebots-Mapper verifiziert.**
   Danach voller Angebots-Import erfolgreich durchgelaufen.
 
+### Increment 13 (2026-09-10): Auftrags-Mapper
+- `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): `SO-<orderNumber>`,
+  gleiche `_transaction`-Basis wie Angebot (Positionen, Actual-Steuerzeilen, Kopfrabatt,
+  `is_free_item` für Nullzeilen, `ignore_pricing_rule`). Zusätzlich: `transaction_date` aus
+  `orderDate`, `delivery_date` aus `plannedShippingDate` (Header + je Position), optional
+  `submit`. Belegkette: `wc_quotation` (read-only Link Quotation) aus `quotationNumber` -
+  aber nur ~1/50 Aufträge haben eins.
+- `setup/custom_fields._doc_link_fields()`: `wc_quotation` auf Sales Order.
+- WeClapp: 3545 Aufträge. `orderItems` + `shippingCostItems` (Basis deckt beide ab). Gemischte
+  Steuersätze pro Beleg (19 % + 7 %) kommen vor -> per-Zeilen-Actual-Steuer deckt das ab.
+- **Noch nicht getestet.**
+
 ### Increment 12 (2026-09-10): Zusatzfeld-Mapper (UI statt Code-Liste)
 Der Vorgänger-Importer hatte die customAttribute->Custom-Field-Zuordnung als kuratierte
 Python-Listen (`setup.py` `setup_custom_fields`, `EN_CUSTOM_ATTRIBUTE_EXCLUDE`, ...).
@@ -255,8 +267,9 @@ Hier stattdessen **UI-gesteuert**:
 - **Offen am Zusatzfeld-Mapper:** Belegzeilen-Entities (`salesOrderItem` etc.) - Felder werden
   angelegt, aber `_transaction.build_lines` ruft `ca.resolve` noch nicht pro Position;
   `crmEvent` (kein Mapper); neue WeClapp-Auswahlwerte brauchen erneutes „Laden" + „Anlegen",
-  sonst scheitert der einzelne Datensatz (Link-Validierung, wird geloggt); generierte
-  MS-DocTypes werden bei Deinstallation nicht aufgeräumt.
+  sonst scheitert der einzelne Datensatz (Link-Validierung, wird geloggt).
+- **Bewusst so (kein Bug):** eine deaktivierte Mapping-Zeile lässt ihr Feld stehen (kein
+  Datenverlust); generierte MS-DocTypes bleiben bei Deinstallation liegen.
 - **Feldname aus der Bezeichnung:** `suggested_fieldname(label, key)` slugifiziert die lesbare
   WeClapp-Bezeichnung (Umlaut-Translit) -> `citroen_originalnummer` statt `cf_4437i966...`.
   Fallback auf den technischen `attributeKey` nur, wenn der Slug leer ist / mit Ziffer beginnt.

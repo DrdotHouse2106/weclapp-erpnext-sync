@@ -139,3 +139,14 @@ register(
 		depends_on=("customer", "article"),
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="sales_order",
+		label="Aufträge",
+		weclapp_doctype=WeClappDocType.SALES_ORDER,
+		target_doctype="Sales Order",
+		mapper_path="weclapp_sync.sync.mappers.sales_order:SalesOrderMapper",
+		depends_on=("customer", "article", "quotation"),
+	)
+)
