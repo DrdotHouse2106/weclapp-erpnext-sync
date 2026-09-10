@@ -17,6 +17,7 @@ import frappe
 
 from weclapp_sync.setup.custom_fields import apply_custom_fields
 from weclapp_sync.setup.naming import apply_naming
+from weclapp_sync.setup.precision import apply_precision
 
 
 def run_setup(*, full: bool = False) -> None:
@@ -24,6 +25,7 @@ def run_setup(*, full: bool = False) -> None:
 	`full=True`: zusätzlich die Stammdaten-/Struktur-Anlage für den Vollimport (noch TODO)."""
 	apply_custom_fields()
 	apply_naming()
+	apply_precision()
 
 	if full:
 		from weclapp_sync.setup import masters

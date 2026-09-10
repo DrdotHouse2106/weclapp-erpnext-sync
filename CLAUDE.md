@@ -192,6 +192,21 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
 - **Für den echten Test:** Artikel-Vollimport ohne Debug-Limit fahren, dann Angebote - sonst
   entstehen ~6000 Stub-Items, die erst ein späterer Artikel-Lauf füllt.
 
+### Increment 10 (2026-09-10): Vollimport sauber + Angebots-Verifikation + rate-Präzision
+- **Vollimport:** Kunde 5831/0, Lieferant 396/0, Artikel 6210/**2**. Die 2 Artikel-Fehler:
+  EAN schon von einem anderen Artikel belegt (WeClapp erlaubt geteilte EANs, ERPNext nicht) ->
+  `article._barcodes()` setzt den Barcode nur, wenn frei. Re-Run holt die 2 nach.
+- **Angebote:** 99/99 importiert, 0 Fehler (nach FREITEXT/Stub-Item-Fix + vollem Artikelbestand).
+- **Summen gegen WeClapp verprobt (GET):** meist cent-genau, teils +1-2 ct. Ursache: WeClapp gibt
+  `netAmount` je Position, ERPNext will `rate` und rechnet `rate*Menge`; bei rabattierten
+  Mengenpositionen ist `netAmount/Menge` krumm und `rate` rundet auf 2 NK -> Drift. (Der alte
+  Importer lehnte solche Belege komplett ab.)
+- **Fix (mit Nutzer abgestimmt): `setup/precision.py`** - Property Setter `precision = 6` auf
+  `rate`/`price_list_rate`/`net_rate` (+ base_-Pendants, discount_amount) der 7 Positions-
+  Doctypes (Quotation/Sales Order/Sales Invoice/Delivery Note/Purchase Order/Purchase Invoice/
+  Purchase Receipt Item). ERPNext speichert den Einzelpreis dann exakt; Beträge bleiben 2-NK.
+  Läuft in `run_setup()` (nach naming). Bestehende 99 Angebote: ein Re-Run korrigiert die Summen.
+
 Als Nächstes:
 1. **Nutzer:** Redeploy, `run_setup(full)` läuft mit; Steuer-Mapping- + Preiskanal-Button +
    Konten/Templates/Kostenstelle in Settings prüfen; Kunden-Delta einmal re-runnen (Watermark).
