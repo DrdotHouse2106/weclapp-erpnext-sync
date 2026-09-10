@@ -115,12 +115,17 @@ def rebuild_mapping_rows(settings, definitions: list[dict]) -> tuple[int, int]:
 		atype = d.get("attributeType")
 		group = d.get("groupName")
 		options = _selectable_values(d)
+		suggested = suggested_fieldname(label, key)
 		for entity in d.get("entities") or []:
 			targets = entity_doctypes(entity)
 			prev = existing.get((key, entity))
-			fieldname = (
-				prev.target_fieldname if prev and prev.target_fieldname else suggested_fieldname(label, key)
-			)
+			# Nutzer-Feldname behalten - außer es ist noch eine der Auto-Vorbelegungen
+			# (dann auf das aktuelle Schema = aus der Bezeichnung heben).
+			prev_fn = (prev.target_fieldname or "").strip() if prev else ""
+			if prev_fn and prev_fn not in (suggested, h.custom_fieldname(key)):
+				fieldname = prev_fn
+			else:
+				fieldname = suggested
 			rows.append(
 				{
 					"wc_attribute_key": key,
