@@ -55,8 +55,11 @@ class SalesOrderMapper(TransactionMapper):
 
 		order_date = h.date_from_ts(record.get("orderDate")) or frappe.utils.nowdate()
 		delivery_date = h.date_from_ts(record.get("plannedShippingDate")) or order_date
+		warehouse = h.ensure_warehouse(record.get("warehouseName"))
 		for it in items:
 			it["delivery_date"] = delivery_date
+			if warehouse:
+				it["warehouse"] = warehouse
 
 		doc.update(
 			{

@@ -246,7 +246,11 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   relevant erst beim Einkaufs-Rechnungs-Mapper. Neue Summenfelder (`vatAmount`,
   `netAmountWithoutShippingCosts`) - für spätere Plausibilitätsprüfungen nutzbar.
 - WeClapp: 3545 Aufträge. Gemischte Steuersätze pro Beleg (19 % + 7 %) kommen vor.
-- **Noch nicht getestet.**
+- **1. Testlauf: 190 ok, 3354 `WarehouseRequired`** ("Source warehouse required for stock item").
+  Sales Order verlangt je Lagerartikel-Position ein `warehouse` (schon im Draft). Fix:
+  `h.ensure_warehouse(record["warehouseName"])` (WeClapp führt das Lager am Beleg -
+  "Hauptlager Langgöns" bei 99/100, on-demand als Warehouse angelegt) + neues Settings-Feld
+  `default_warehouse` als Fallback. Je Position gesetzt. Re-Run steht aus.
 
 ### Increment 12 (2026-09-10): Zusatzfeld-Mapper (UI statt Code-Liste)
 Der Vorgänger-Importer hatte die customAttribute->Custom-Field-Zuordnung als kuratierte

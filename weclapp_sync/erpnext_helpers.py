@@ -180,6 +180,33 @@ def default_currency() -> str:
 	return _settings().default_currency or "EUR"
 
 
+def default_warehouse() -> str | None:
+	return _settings().get("default_warehouse") or None
+
+
+def ensure_warehouse(wc_name: str | None) -> str | None:
+	"""WeClapp-Lagername -> ERPNext-Warehouse (on-demand angelegt). Fällt auf das in den
+	Settings hinterlegte Standardlager zurück, wenn kein Name kommt."""
+	name = (wc_name or "").strip()
+	if not name:
+		return default_warehouse()
+	abbr = company_abbr()
+	full = f"{name} - {abbr}" if abbr else name
+	if frappe.db.exists("Warehouse", full):
+		return full
+	if frappe.db.exists("Warehouse", name):
+		return name
+	hit = frappe.db.get_value("Warehouse", {"warehouse_name": name}, "name")
+	if hit:
+		return hit
+	doc = frappe.new_doc("Warehouse")
+	doc.warehouse_name = name
+	doc.company = _settings().company or None
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc.name
+
+
 def company_abbr() -> str | None:
 	company = _settings().company
 	return frappe.db.get_value("Company", company, "abbr") if company else None

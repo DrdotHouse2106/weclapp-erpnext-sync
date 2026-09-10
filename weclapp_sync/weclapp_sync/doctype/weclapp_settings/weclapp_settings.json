@@ -41,6 +41,7 @@
   "default_territory_germany",
   "default_uom",
   "default_item_group",
+  "default_warehouse",
   "default_selling_price_list",
   "default_buying_price_list",
   "tab_price_lists",
@@ -438,12 +439,19 @@
    "label": "Zusatzfeld-Mapping",
    "options": "WeClapp Custom Attribute Mapping",
    "description": "Erst „Zusatzfelder aus WeClapp laden“. Dann bei den gewünschten Feldern „Importieren“ anhaken, ggf. Feldname/Feldtyp anpassen (oder auf ein bestehendes Feld zeigen), dann „Ausgewählte Felder anlegen“."
+  },
+  {
+   "fieldname": "default_warehouse",
+   "fieldtype": "Link",
+   "options": "Warehouse",
+   "label": "Standardlager",
+   "description": "Fallback-Lager für Belegpositionen, wenn WeClapp kein Lager am Beleg führt."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-10 18:00:00.000000",
+ "modified": "2026-09-10 21:00:00.000000",
  "modified_by": "Administrator",
  "module": "WeClapp Sync",
  "name": "WeClapp Settings",
