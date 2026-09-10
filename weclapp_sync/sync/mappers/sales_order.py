@@ -20,11 +20,14 @@ class SalesOrderMapper(TransactionMapper):
 	items_field = "orderItems"
 
 	def should_skip(self, record: dict) -> bool:
-		return not (
-			record.get("orderNumber")
-			and record.get("customerNumber")
-			and record.get("orderItems")
-		)
+		if not (record.get("orderNumber") and record.get("customerNumber") and record.get("orderItems")):
+			return True
+		# Negativ-Aufträge (Retouren/Gutschriften in WeClapp) kann ERPNext als Sales Order
+		# nicht abbilden (Grand Total muss >= 0 sein) -> überspringen.
+		try:
+			return float(record.get("netAmount") or 0) < 0
+		except (TypeError, ValueError):
+			return False
 
 	def target_name(self, record: dict) -> str | None:
 		# ERPNext-Dokumentname = WeClapp-Auftragsnummer (kein Präfix); autoname=Prompt ist
@@ -54,7 +57,8 @@ class SalesOrderMapper(TransactionMapper):
 			return existing_name
 
 		order_date = h.date_from_ts(record.get("orderDate")) or frappe.utils.nowdate()
-		delivery_date = h.date_from_ts(record.get("plannedShippingDate")) or order_date
+		# WeClapp lässt `plannedShippingDate` vor dem Auftragsdatum zu, ERPNext nicht.
+		delivery_date = max(h.date_from_ts(record.get("plannedShippingDate")) or order_date, order_date)
 		warehouse = h.ensure_warehouse(record.get("warehouseName"))
 		for it in items:
 			it["delivery_date"] = delivery_date
