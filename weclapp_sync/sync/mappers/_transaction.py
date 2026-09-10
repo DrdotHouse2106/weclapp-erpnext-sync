@@ -29,6 +29,7 @@ class TransactionMapper(Mapper):
 	def __init__(self) -> None:
 		super().__init__()
 		self._tax_map: dict | None = None
+		self._is_selling: bool = True
 
 	# ------------------------------------------------------------------ Steuer-Map
 	def taxes(self) -> dict:
@@ -57,8 +58,9 @@ class TransactionMapper(Mapper):
 	) -> tuple[list[dict], dict]:
 		"""Baut die ERPNext-Positionsliste + akkumuliert die Steuern.
 		`account_field`: "income_account" (Verkauf) oder "expense_account" (Einkauf).
-		Rückgabe: (items, tax_accumulator) - tax_accumulator: {tax_id: (discountable, fixed)}.
+		Rückgabe: (items, tax_accumulator) - tax_accumulator: {account: (discountable, fixed, name)}.
 		"""
+		self._is_selling = is_selling
 		settings = get_settings()
 		cost_center = settings.default_cost_center or None
 		default_acc = (
@@ -110,36 +112,52 @@ class TransactionMapper(Mapper):
 
 		return items, acc_taxes
 
+	def _fallback_tax_account(self) -> str | None:
+		s = get_settings()
+		return (
+			s.get("default_sales_tax_account") if self._is_selling else s.get("default_purchase_tax_account")
+		) or None
+
+	def _line_tax_account(self, wc_tax_id) -> str | None:
+		"""ERPNext-Steuerkonto für eine WeClapp-taxId: aus dem Steuer-Mapping, sonst das in den
+		Settings hinterlegte Fallback-Steuerkonto (z.B. für nicht gepflegte Auslandssteuern -
+		sonst würde die Steuer dieser Zeile still verschluckt)."""
+		info = self.tax_info(wc_tax_id)
+		if info and info.get("tax_account"):
+			return info["tax_account"]
+		return self._fallback_tax_account()
+
 	def _accumulate_tax(self, acc: dict, item: dict, *, header_discountable: bool) -> None:
-		info = self.tax_info(item.get("taxId"))
-		if not info or not info.get("tax_account"):
+		account = self._line_tax_account(item.get("taxId"))
+		delta = round(float(item.get("grossAmount", 0) or 0) - float(item.get("netAmount", 0) or 0), 2)
+		if not account or not delta:
 			return
-		tax_id = str(item.get("taxId"))
-		delta = float(item.get("grossAmount", 0) or 0) - float(item.get("netAmount", 0) or 0)
-		discountable, fixed = acc.get(tax_id, (0.0, 0.0))
+		# Bucket pro ERPNext-Konto (mehrere WeClapp-Steuern aufs selbe Konto -> eine Zeile).
+		info = self.tax_info(item.get("taxId")) or {}
+		name = info.get("name") or "Steuer"
+		discountable, fixed, _ = acc.get(account, (0.0, 0.0, name))
 		if header_discountable:
 			discountable += delta
 		else:
 			fixed += delta
-		acc[tax_id] = (discountable, fixed)
+		acc[account] = (discountable, fixed, name)
 
 	def build_tax_rows(self, record: dict, acc_taxes: dict, *, negate: bool = False) -> list[dict]:
-		"""Akkumulierte Steuern -> ERPNext "Actual"-Steuerzeilen."""
+		"""Akkumulierte Steuern -> ERPNext "Actual"-Steuerzeilen (eine je Konto)."""
 		scale = 1.0 - self.header_adjustment_percentage(record) / 100.0
 		cost_center = get_settings().default_cost_center or None
 		rows: list[dict] = []
-		for tax_id, (discountable, fixed) in acc_taxes.items():
-			info = self.tax_info(tax_id)
-			if not info or not info.get("tax_account"):
-				continue
+		for account, (discountable, fixed, name) in acc_taxes.items():
 			amount = round(discountable * scale + fixed, 2)
 			if negate:
 				amount = -amount
+			if not amount:
+				continue
 			rows.append(
 				{
 					"charge_type": "Actual",
-					"account_head": info["tax_account"],
-					"description": info.get("name") or f"WeClapp Steuer {tax_id}",
+					"account_head": account,
+					"description": name,
 					"tax_amount": amount,
 					"cost_center": cost_center,
 				}

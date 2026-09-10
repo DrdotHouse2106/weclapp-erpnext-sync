@@ -58,6 +58,8 @@
   "default_income_account",
   "default_expense_account",
   "default_cost_center",
+  "default_sales_tax_account",
+  "default_purchase_tax_account",
   "column_break_tax",
   "default_sales_taxes_template",
   "default_purchase_taxes_template",
@@ -446,12 +448,26 @@
    "options": "Warehouse",
    "label": "Standardlager",
    "description": "Fallback-Lager für Belegpositionen, wenn WeClapp kein Lager am Beleg führt."
+  },
+  {
+   "fieldname": "default_sales_tax_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Fallback-Steuerkonto Verkauf",
+   "description": "Wird verwendet, wenn eine WeClapp-Verkaufssteuer nicht im Steuer-Mapping hinterlegt ist (z.B. nicht gepflegte Auslandssteuern) - sonst wird die Steuer der Zeile still verschluckt."
+  },
+  {
+   "fieldname": "default_purchase_tax_account",
+   "fieldtype": "Link",
+   "options": "Account",
+   "label": "Fallback-Steuerkonto Einkauf",
+   "description": "Analog für Einkaufssteuern."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-10 21:00:00.000000",
+ "modified": "2026-09-10 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "WeClapp Sync",
  "name": "WeClapp Settings",

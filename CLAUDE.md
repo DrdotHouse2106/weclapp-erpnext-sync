@@ -246,11 +246,20 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   relevant erst beim Einkaufs-Rechnungs-Mapper. Neue Summenfelder (`vatAmount`,
   `netAmountWithoutShippingCosts`) - für spätere Plausibilitätsprüfungen nutzbar.
 - WeClapp: 3545 Aufträge. Gemischte Steuersätze pro Beleg (19 % + 7 %) kommen vor.
-- **1. Testlauf: 190 ok, 3354 `WarehouseRequired`** ("Source warehouse required for stock item").
-  Sales Order verlangt je Lagerartikel-Position ein `warehouse` (schon im Draft). Fix:
-  `h.ensure_warehouse(record["warehouseName"])` (WeClapp führt das Lager am Beleg -
-  "Hauptlager Langgöns" bei 99/100, on-demand als Warehouse angelegt) + neues Settings-Feld
-  `default_warehouse` als Fallback. Je Position gesetzt. Re-Run steht aus.
+- **1. Testlauf: 190 ok, 3354 `WarehouseRequired`** -> `h.ensure_warehouse(record["warehouseName"])`
+  ("Hauptlager Langgöns" bei 99/100, on-demand angelegt) + Settings-Feld `default_warehouse`,
+  je Position gesetzt. `default_warehouse()` fällt zurück: Settings -> `Company.default_warehouse`
+  -> erstes aktives Nicht-Gruppen-Lager.
+- **2. Testlauf: 3105 ok, 439 fail** - Rest = Amazon-Aufträge (`salesChannel GROSS7`) ohne
+  WeClapp-Lager, `default_warehouse` war nicht gesetzt -> Fallback-Kette (s.o.) eingebaut.
+- **Bruttosummen:** 3105 Aufträge, nur **1** Abweichung (`check_gross_total`): 2026AU2234
+  ERPNext 257,62 vs WeClapp 260 (-2,38). Ursache: WeClapp-Steuer `1407276` „IT IVA ridotta"
+  (OSS, ermäßigt IT) hat **in WeClapp selbst keine Konten** -> nicht im Steuer-Mapping ->
+  `_accumulate_tax` verschluckte die Zeilensteuer. Fix: **Fallback-Steuerkonto** (Settings
+  `default_sales_tax_account` / `default_purchase_tax_account`). `_accumulate_tax`/`build_tax_rows`
+  bucketn jetzt **pro ERPNext-Konto** (nicht mehr pro `taxId`); nicht gemappte Steuern gehen
+  aufs Fallback-Konto statt verloren. Nutzer sollte den Fallback auf `1767` (USt EG-Land) setzen.
+- **Verifiziert cent-genau:** 2026AU2289/2288, 11510 (= WeClapp `grossAmount`).
 
 ### Increment 12 (2026-09-10): Zusatzfeld-Mapper (UI statt Code-Liste)
 Der Vorgänger-Importer hatte die customAttribute->Custom-Field-Zuordnung als kuratierte
