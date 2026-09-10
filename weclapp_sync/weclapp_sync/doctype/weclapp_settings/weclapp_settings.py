@@ -377,6 +377,43 @@ class WeClappSettings(Document):
 		)
 		return "Vollimport wurde gestartet – Fortschritt unter „WeClapp Sync Run“."
 
+	# ------------------------------------------------------------------ Zusatzfelder
+	@frappe.whitelist()
+	def populate_custom_attribute_mapping(self):
+		"""Holt alle WeClapp-`customAttributeDefinition` (read-only) und baut die Tabelle
+		`custom_attribute_mappings` neu auf. Vorhandene Nutzer-Auswahl bleibt erhalten."""
+		from weclapp_sync.sync.settings import get_client
+		from weclapp_sync.setup import custom_attribute_fields as caf
+
+		client = get_client()
+		client.open()
+		try:
+			definitions = list(client.iter_all("customAttributeDefinition"))
+		finally:
+			client.close()
+
+		total, new = caf.rebuild_mapping_rows(self, definitions)
+		self.save()
+		return (
+			f"{total} Zusatzfelder geladen ({new} neu). Bei den gewünschten „Importieren“ "
+			f"anhaken, dann „Ausgewählte Felder anlegen“."
+		)
+
+	@frappe.whitelist()
+	def apply_custom_attribute_fields(self):
+		"""Legt die Custom Fields für alle aktivierten Mapping-Zeilen an (idempotent)."""
+		from weclapp_sync.setup import custom_attribute_fields as caf
+
+		res = caf.apply_custom_attribute_fields()
+		self.reload()
+		if not res["enabled_rows"]:
+			return "Keine Zeile aktiviert – nichts angelegt."
+		doctypes = ", ".join(res["doctypes"]) or "–"
+		return (
+			f"{res['created']} Feld(er) angelegt/aktualisiert auf: {doctypes}. "
+			f"{res['enabled_rows']} Zusatzfeld(er) sind für den Sync aktiv."
+		)
+
 
 def _fallback_label(key: str) -> str:
 	return key.replace("_", " ").title()

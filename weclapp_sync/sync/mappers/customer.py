@@ -126,7 +126,7 @@ class CustomerMapper(Mapper):
 			"wc_opt_in_phone": 1 if record.get("optInPhone") else 0,
 			"wc_opt_in_sms": 1 if record.get("optInSms") else 0,
 		}
-		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
+		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
 		return fields
 
 	# ------------------------------------------------------------------ voller Graph

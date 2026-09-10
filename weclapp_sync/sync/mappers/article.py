@@ -80,7 +80,7 @@ class ArticleMapper(Mapper):
 			fields["description"] = record.get("description") or record.get("name")
 			fields["item_group"] = h.ensure_item_group(self._category_name(record))
 
-		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
+		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
 		return fields
 
 	@staticmethod

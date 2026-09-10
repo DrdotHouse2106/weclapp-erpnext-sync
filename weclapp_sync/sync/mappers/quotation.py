@@ -70,7 +70,7 @@ class QuotationMapper(TransactionMapper):
 
 		doc.set("items", items)
 		doc.set("taxes", tax_rows)
-		doc.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
+		doc.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
 
 		doc.flags.ignore_permissions = True
 		if existing_name:

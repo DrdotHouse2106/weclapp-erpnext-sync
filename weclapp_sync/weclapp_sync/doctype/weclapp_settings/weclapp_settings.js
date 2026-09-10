@@ -64,6 +64,35 @@ frappe.ui.form.on("WeClapp Settings", {
 		);
 	},
 
+	populate_custom_attribute_mappings(frm) {
+		frm.call({
+			doc: frm.doc,
+			method: "populate_custom_attribute_mapping",
+			freeze: true,
+			freeze_message: __("Hole WeClapp-Zusatzfelder …"),
+		}).then((r) => {
+			frm.reload_doc();
+			frappe.msgprint({ title: __("Zusatzfelder"), message: r.message, indicator: "blue" });
+		});
+	},
+
+	apply_custom_attribute_fields(frm) {
+		frappe.confirm(
+			__("Für alle angehakten Zusatzfelder die fehlenden ERPNext-Felder anlegen?"),
+			() => {
+				frm.call({
+					doc: frm.doc,
+					method: "apply_custom_attribute_fields",
+					freeze: true,
+					freeze_message: __("Lege Felder an …"),
+				}).then((r) => {
+					frm.reload_doc();
+					frappe.msgprint({ title: __("Zusatzfelder"), message: r.message, indicator: "green" });
+				});
+			}
+		);
+	},
+
 	refresh_object_types(frm) {
 		frm.call({ doc: frm.doc, method: "refresh_object_type_list", freeze: true }).then((r) => {
 			frm.reload_doc();

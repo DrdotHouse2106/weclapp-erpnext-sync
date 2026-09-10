@@ -30,6 +30,7 @@ class Mapper:
 
 	def __init__(self) -> None:
 		self._ca_definitions: dict | None = None
+		self._ca_field_map: dict | None = None
 
 	# --------------------------------------------------------------- Zusatzfelder (customAttributes)
 	def custom_attribute_definitions(self) -> dict:
@@ -45,6 +46,18 @@ class Mapper:
 				except Exception:
 					self._ca_definitions = {}
 		return self._ca_definitions
+
+	def custom_attribute_field_map(self) -> dict:
+		"""attributeKey -> {"fieldname", "fieldtype"} für die im „Zusatzfeld-Mapping"
+		aktivierten Zeilen dieses Ziel-Doctypes. Einmal pro Mapper-Lauf geladen."""
+		if self._ca_field_map is None:
+			from weclapp_sync.setup import custom_attribute_fields as caf
+
+			try:
+				self._ca_field_map = caf.field_map(self.target_doctype)
+			except Exception:
+				self._ca_field_map = {}
+		return self._ca_field_map
 
 	# True, wenn für target_doctype autoname="Prompt" gesetzt ist (siehe
 	# weclapp_sync/setup/naming.py) und target_name() als Dokument-ID verwendet werden soll.

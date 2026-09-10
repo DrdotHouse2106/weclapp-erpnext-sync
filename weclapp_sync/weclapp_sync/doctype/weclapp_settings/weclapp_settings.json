@@ -58,7 +58,11 @@
   "default_purchase_taxes_template",
   "create_missing_tax_accounts",
   "populate_tax_mappings",
-  "tax_mappings"
+  "tax_mappings",
+  "section_custom_attributes",
+  "populate_custom_attribute_mappings",
+  "apply_custom_attribute_fields",
+  "custom_attribute_mappings"
  ],
  "fields": [
   {
@@ -385,12 +389,34 @@
    "fieldtype": "Table",
    "label": "Steuer-Mapping",
    "options": "WeClapp Tax Mapping"
+  },
+  {
+   "fieldname": "section_custom_attributes",
+   "fieldtype": "Section Break",
+   "label": "Zusatzfelder (WeClapp customAttributes)"
+  },
+  {
+   "fieldname": "populate_custom_attribute_mappings",
+   "fieldtype": "Button",
+   "label": "Zusatzfelder aus WeClapp laden"
+  },
+  {
+   "fieldname": "apply_custom_attribute_fields",
+   "fieldtype": "Button",
+   "label": "Ausgewählte Felder anlegen"
+  },
+  {
+   "fieldname": "custom_attribute_mappings",
+   "fieldtype": "Table",
+   "label": "Zusatzfeld-Mapping",
+   "options": "WeClapp Custom Attribute Mapping",
+   "description": "Erst „Zusatzfelder aus WeClapp laden“. Dann bei den gewünschten Feldern „Importieren“ anhaken, ggf. Feldname/Feldtyp anpassen (oder auf ein bestehendes Feld zeigen), dann „Ausgewählte Felder anlegen“."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-08 00:00:00.000000",
+ "modified": "2026-09-10 17:05:00.000000",
  "modified_by": "Administrator",
  "module": "WeClapp Sync",
  "name": "WeClapp Settings",

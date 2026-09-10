@@ -86,7 +86,7 @@ class SupplierMapper(Mapper):
 			"payment_terms": h.link_or_none("Payment Terms Template", record.get("termOfPaymentName")),
 			"wc_zahlungsart": record.get("paymentMethodName") or None,
 		}
-		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.target_doctype))
+		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
 		return fields
 
 	def upsert(self, record: dict) -> str | None:

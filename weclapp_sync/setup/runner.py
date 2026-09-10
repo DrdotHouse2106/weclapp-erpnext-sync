@@ -37,6 +37,19 @@ def run_setup(*, full: bool = False) -> None:
 		frappe.db.rollback()
 		frappe.log_error(title="WeClapp Setup: setup_pricing_settings", message=frappe.get_traceback())
 
+	# Immer: die im „Zusatzfeld-Mapping" aktivierten Custom Fields (re-)anlegen (idempotent,
+	# no-op solange der Nutzer nichts aktiviert hat).
+	try:
+		from weclapp_sync.setup.custom_attribute_fields import apply_custom_attribute_fields
+
+		apply_custom_attribute_fields()
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(
+			title="WeClapp Setup: apply_custom_attribute_fields", message=frappe.get_traceback()
+		)
+
 	if full:
 		for step in (masters.setup_uom_settings, masters.setup_payment_terms, masters.setup_fiscal_years):
 			try:

@@ -1,21 +1,15 @@
 """WeClapp customAttributes (Zusatzfelder / Freifelder) -> ERPNext Custom Fields.
 
-Portiert aus reference/.../base_migration.py `_map_custom_attributes`.
+Welche Attribute übertragen werden und in welches ERPNext-Feld, steht in der **UI-Tabelle**
+„Zusatzfeld-Mapping" der WeClapp Settings (siehe setup/custom_attribute_fields.py). `resolve()`
+bekommt daraus die `field_map` (nur aktivierte Zeilen für den jeweiligen Ziel-Doctype) - kein
+im Code kuratierter Feldkatalog mehr.
 
-**Bewusst nur bestehende Felder:** Es werden nur Werte für ERPNext-Felder gesetzt, die schon
-existieren (`meta.has_field`). Das dynamische Anlegen der Felder aus
-`customAttributeDefinition` (reference/setup.py `setup_custom_fields` /
-`setup_multiselect_fields` / `setup_item_freifelder_tab`) ist noch nicht portiert - siehe
-CLAUDE.md. Fehlende Felder werden übersprungen (kein stiller Datenverlust: der Sync-Log-
-Eintrag zeigt nichts, aber `resolve()` gibt die übersprungenen Keys zurück, wenn der Aufrufer
-sie protokollieren will).
+Nicht (mehr) hier: das Anlegen der Felder - das macht `apply_custom_attribute_fields()` über
+den Button in den Settings bzw. `run_setup()`.
 """
 
 from __future__ import annotations
-
-import frappe
-
-from weclapp_sync import erpnext_helpers as h
 
 
 def _raw_value(ca: dict, attr_def: dict):
@@ -40,24 +34,23 @@ def _raw_value(ca: dict, attr_def: dict):
 	return None
 
 
-def resolve(wc_record: dict, definitions: dict, target_doctype: str) -> dict:
-	"""Gibt {fieldname: value} für alle customAttributes zurück, deren ERPNext-Feld existiert.
+def resolve(wc_record: dict, definitions: dict, field_map: dict) -> dict:
+	"""Gibt {fieldname: value} für alle customAttributes zurück, die im „Zusatzfeld-Mapping"
+	aktiviert sind.
 
 	`definitions`: id -> customAttributeDefinition (siehe Mapper.custom_attribute_definitions()).
-	MULTISELECT auf `Table MultiSelect`-Feldern wird noch übersprungen (Child-Table-Handling TODO),
-	auf einfachen Feldern als ", "-Liste geschrieben.
+	`field_map`: attributeKey -> {"fieldname": str, "fieldtype": str} (siehe
+	setup/custom_attribute_fields.field_map()).
 	"""
-	if not wc_record.get("customAttributes"):
+	if not wc_record.get("customAttributes") or not field_map:
 		return {}
-	meta = frappe.get_meta(target_doctype)
 	out: dict = {}
 	for ca in wc_record.get("customAttributes") or []:
 		attr_def = definitions.get(ca.get("attributeDefinitionId"))
-		if not attr_def or not attr_def.get("attributeKey"):
+		if not attr_def:
 			continue
-		fieldname = h.custom_fieldname(attr_def["attributeKey"])
-		df = meta.get_field(fieldname)
-		if not df:
+		mapping = field_map.get(attr_def.get("attributeKey"))
+		if not mapping:
 			continue
 
 		value = _raw_value(ca, attr_def)
@@ -65,11 +58,11 @@ def resolve(wc_record: dict, definitions: dict, target_doctype: str) -> dict:
 			continue
 
 		if isinstance(value, list):
-			if df.fieldtype == "Table MultiSelect":
+			if mapping["fieldtype"] == "Table MultiSelect":
 				continue  # TODO: Child-Table-Zeilen
 			value = ", ".join(v for v in value if v)
 			if not value:
 				continue
 
-		out[fieldname] = value
+		out[mapping["fieldname"]] = value
 	return out

@@ -221,6 +221,32 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   = WeClapp-Angebot mit 0 Positionen (`should_skip` korrekt). **Angebots-Mapper verifiziert.**
   Danach voller Angebots-Import erfolgreich durchgelaufen.
 
+### Increment 12 (2026-09-10): Zusatzfeld-Mapper (UI statt Code-Liste)
+Der Vorgänger-Importer hatte die customAttribute->Custom-Field-Zuordnung als kuratierte
+Python-Listen (`setup.py` `setup_custom_fields`, `EN_CUSTOM_ATTRIBUTE_EXCLUDE`, ...).
+Hier stattdessen **UI-gesteuert**:
+- Neues Child-Doctype **WeClapp Custom Attribute Mapping** (`custom_attribute_mappings` in den
+  Settings, Abschnitt "Zusatzfelder"). Pro (Attribut, WeClapp-Objekt) eine Zeile: lesbare
+  Bezeichnung (`label`), WeClapp-Typ, Gruppe, Ziel-Doctype(s), `enabled`, `target_fieldname`
+  (vorbelegt via `h.custom_fieldname`), `fieldtype` (vorbelegt aus `attributeType`),
+  `field_options` (aus `selectableValues`), `field_status` (vorhanden/fehlt/teilweise).
+- Button **"Zusatzfelder aus WeClapp laden"** (`populate_custom_attribute_mapping`): holt alle
+  99 `customAttributeDefinition` (read-only), baut die Tabelle neu, Nutzer-Auswahl bleibt.
+- Button **"Ausgewählte Felder anlegen"** (`apply_custom_attribute_fields`): legt je aktivierter
+  Zeile das fehlende Custom Field an (Sammel-Sektion "WeClapp Zusatzfelder" pro Doctype),
+  schreibt `field_status` zurück. Läuft auch in `run_setup()` (idempotent).
+- `setup/custom_attribute_fields.py`: `WC_ENTITY_DOCTYPES` (article->Item, party->Customer/
+  Supplier/Contact, salesOrder->Sales Order, ...), `ATTR_TYPE_TO_FIELDTYPE`, `field_map(doctype)`.
+- `sync/mappers/_custom_attributes.resolve()` nimmt jetzt `field_map` (nur aktivierte Zeilen des
+  Ziel-Doctypes) statt `target_doctype` + Feldname-Raten. `Mapper.custom_attribute_field_map()`
+  lädt sie einmal pro Lauf. customer/supplier/article/quotation angepasst.
+- WeClapp `customAttributeDefinition`-Bestand: 99 Defs (article 76, party 19, salesOrder 4,
+  shipment 4, salesInvoice 2, salesOrderItem 1). Typen: STRING 38, BOOLEAN 30, LIST 10,
+  MULTISELECT_LIST 9, LARGE_TEXT 8, DECIMAL 3, URL 1. Alle mit `label`, viele mit `groupName`.
+- **Offen:** MULTISELECT_LIST landet als ", "-Text (Table MultiSelect + Options-Child = TODO);
+  Item-"Freifelder"-Tab-Layout aus dem Vorgänger (`ITEM_FREIFELDER_LAYOUT`) nicht portiert
+  (alle Felder unter einer Sammel-Sektion statt handmodelliertem Tab).
+
 ### Increment 11 (2026-09-10): kontrollierter Abbruch für laufende Importe
 - Feld `abort_requested` (Check) + Status `Aborted` am *WeClapp Sync Run*; `weclapp_sync_run.js`
   Button "Abbruch anfordern" (nur bei Status Running).

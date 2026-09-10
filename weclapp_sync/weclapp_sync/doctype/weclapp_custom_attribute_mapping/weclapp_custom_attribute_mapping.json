@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "creation": "2026-09-10 17:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "wc_attribute_key",
+  "wc_label",
+  "wc_entity",
+  "target_doctype",
+  "enabled",
+  "wc_attribute_type",
+  "wc_group",
+  "column_break_1",
+  "target_fieldname",
+  "fieldtype",
+  "field_options",
+  "field_status"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "description": "Technischer WeClapp-attributeKey (nicht änderbar).",
+   "fieldname": "wc_attribute_key",
+   "fieldtype": "Data",
+   "label": "WC-Key",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "wc_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bezeichnung (WeClapp)",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "wc_entity",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "WC-Objekt",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "description": "ERPNext-Doctype(s), auf die dieses Feld angelegt/gemappt wird.",
+   "fieldname": "target_doctype",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "ERPNext-Doctype",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "description": "Wert dieses Zusatzfelds beim Sync mit importieren.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Importieren"
+  },
+  {
+   "fieldname": "wc_attribute_type",
+   "fieldtype": "Data",
+   "label": "WC-Typ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "wc_group",
+   "fieldtype": "Data",
+   "label": "WeClapp-Gruppe",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 3,
+   "description": "ERPNext-Feldname. Vorbelegt aus dem WC-Key; kann auf ein bestehendes (Custom-)Feld zeigen.",
+   "fieldname": "target_fieldname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "ERPNext-Feldname"
+  },
+  {
+   "columns": 2,
+   "description": "Feldtyp für die Neuanlage. Vorbelegt aus dem WeClapp-Typ.",
+   "fieldname": "fieldtype",
+   "fieldtype": "Select",
+   "label": "Feldtyp",
+   "options": "Data\nSmall Text\nLong Text\nText Editor\nCheck\nInt\nFloat\nSelect\nDate\nDatetime"
+  },
+  {
+   "depends_on": "eval:doc.fieldtype=='Select'",
+   "description": "Eine Auswahl je Zeile (nur bei Feldtyp „Select“). Vorbelegt aus den WeClapp-Auswahlwerten.",
+   "fieldname": "field_options",
+   "fieldtype": "Small Text",
+   "label": "Auswahlwerte"
+  },
+  {
+   "columns": 2,
+   "fieldname": "field_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Feld-Status",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-10 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "WeClapp Sync",
+ "name": "WeClapp Custom Attribute Mapping",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
