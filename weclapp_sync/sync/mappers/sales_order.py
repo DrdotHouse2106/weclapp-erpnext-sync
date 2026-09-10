@@ -2,7 +2,7 @@
 
 Portiert aus reference/.../sales_order_migration.py. Gleiche Positions-/Steuerlogik wie das
 Angebot (`_transaction`), zusätzlich Liefertermin und der Belegketten-Verweis auf das Angebot
-(`wc_quotation`, read-only Link).
+(`wc_quotation`, read-only Link). Dokumentname = WeClapp-`orderNumber` (kein Präfix).
 """
 
 from __future__ import annotations
@@ -27,8 +27,9 @@ class SalesOrderMapper(TransactionMapper):
 		)
 
 	def target_name(self, record: dict) -> str | None:
-		num = record.get("orderNumber")
-		return f"SO-{num}" if num else None
+		# ERPNext-Dokumentname = WeClapp-Auftragsnummer (kein Präfix); autoname=Prompt ist
+		# per Property Setter gesetzt (setup/naming.py).
+		return record.get("orderNumber") or None
 
 	def upsert(self, record: dict) -> str | None:
 		if self.should_skip(record):
@@ -72,8 +73,8 @@ class SalesOrderMapper(TransactionMapper):
 		)
 
 		qn = record.get("quotationNumber")
-		if qn and frappe.db.exists("Quotation", f"AN-{qn}"):
-			doc.wc_quotation = f"AN-{qn}"
+		if qn and frappe.db.exists("Quotation", qn):
+			doc.wc_quotation = qn
 
 		if settings.default_sales_taxes_template and frappe.db.exists(
 			"Sales Taxes and Charges Template", settings.default_sales_taxes_template
@@ -89,6 +90,8 @@ class SalesOrderMapper(TransactionMapper):
 			doc.save()
 		else:
 			doc.insert(set_name=name)
+
+		self.check_gross_total(doc, record, label="Auftrag")
 
 		if settings.submit_documents and doc.docstatus == 0:
 			doc.submit()

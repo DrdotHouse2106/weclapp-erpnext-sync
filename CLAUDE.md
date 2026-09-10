@@ -221,16 +221,31 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   = WeClapp-Angebot mit 0 Positionen (`should_skip` korrekt). **Angebots-Mapper verifiziert.**
   Danach voller Angebots-Import erfolgreich durchgelaufen.
 
-### Increment 13 (2026-09-10): Auftrags-Mapper
-- `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): `SO-<orderNumber>`,
-  gleiche `_transaction`-Basis wie Angebot (Positionen, Actual-Steuerzeilen, Kopfrabatt,
-  `is_free_item` für Nullzeilen, `ignore_pricing_rule`). Zusätzlich: `transaction_date` aus
-  `orderDate`, `delivery_date` aus `plannedShippingDate` (Header + je Position), optional
-  `submit`. Belegkette: `wc_quotation` (read-only Link Quotation) aus `quotationNumber` -
-  aber nur ~1/50 Aufträge haben eins.
+### Increment 13 (2026-09-10): Auftrags-Mapper + API-Update + Belegnamen ohne Präfix
+- `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): Dokumentname =
+  WeClapp-`orderNumber` (**kein Präfix**), gleiche `_transaction`-Basis wie Angebot (Positionen,
+  Actual-Steuerzeilen, Kopfrabatt, `is_free_item` für Nullzeilen, `ignore_pricing_rule`).
+  Zusätzlich: `transaction_date` aus `orderDate`, `delivery_date` aus `plannedShippingDate`
+  (Header + je Position), optional `submit`. Belegkette: `wc_quotation` (read-only Link
+  Quotation) aus `quotationNumber` - nur ~1/50 Aufträge haben eins.
 - `setup/custom_fields._doc_link_fields()`: `wc_quotation` auf Sales Order.
-- WeClapp: 3545 Aufträge. `orderItems` + `shippingCostItems` (Basis deckt beide ab). Gemischte
-  Steuersätze pro Beleg (19 % + 7 %) kommen vor -> per-Zeilen-Actual-Steuer deckt das ab.
+- **Belegnamen ohne Präfix** (Nutzer-Wunsch): Angebot heißt jetzt `<quotationNumber>` statt
+  `AN-<...>`, Auftrag `<orderNumber>` statt `SO-<...>`. `autoname=Prompt` erlaubt das.
+  → bereits importierte 99 Angebote behalten ihr `AN-`-Präfix (wc_id-Abgleich); für saubere
+  Namen einmal löschen + neu importieren.
+- **`TransactionMapper.check_gross_total()`**: nach Insert Bruttosumme gegen WeClapp
+  `grossAmount` prüfen, bei Abweichung > 1 ct nur Error-Log (kein Abbruch) - wie
+  `_post_validation` im Vorgänger. In quotation + sales_order eingehängt.
+- `build_lines` sortiert Positionen jetzt nach `positionNumber`.
+- **WeClapp API-Update (2026-09-10) eingearbeitet:** `client._request` respektiert
+  `X-Weclapp-Wait-Ms` (wartet vor dem nächsten Call) und retryt 429/503 gebremst
+  (`_MAX_RETRIES=4`, Sleeps auf 30 s gedeckelt). `headerDiscount/Surcharge` null->0 und
+  Entfall `ADDITION_ABSOLUTE`/`REDUCTION_ABSOLUTE`: **betrifft uns nicht** (wir nutzen
+  `netAmount` + Prozent-Kopfrabatt, keine absoluten Rabatt-Typen, kein `rebate`).
+  `positionNumber`-Pflicht bei `/contract`,`/purchaseOrderRequest`,`/purchaseInvoice`:
+  relevant erst beim Einkaufs-Rechnungs-Mapper. Neue Summenfelder (`vatAmount`,
+  `netAmountWithoutShippingCosts`) - für spätere Plausibilitätsprüfungen nutzbar.
+- WeClapp: 3545 Aufträge. Gemischte Steuersätze pro Beleg (19 % + 7 %) kommen vor.
 - **Noch nicht getestet.**
 
 ### Increment 12 (2026-09-10): Zusatzfeld-Mapper (UI statt Code-Liste)

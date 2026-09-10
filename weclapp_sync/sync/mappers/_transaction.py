@@ -97,7 +97,13 @@ class TransactionMapper(Mapper):
 			)
 			self._accumulate_tax(acc_taxes, wc_item, header_discountable=header_discountable)
 
-		for wc_item in record.get(self.items_field) or []:
+		def _pos(i: dict) -> float:
+			try:
+				return float(i.get("positionNumber") or 0)
+			except (TypeError, ValueError):
+				return 0.0
+
+		for wc_item in sorted(record.get(self.items_field) or [], key=_pos):
 			_add_line(wc_item, title=_line_title(wc_item), header_discountable=True)
 		for wc_item in record.get("shippingCostItems") or []:
 			_add_line(wc_item, title="Versandkosten", header_discountable=False)
@@ -139,6 +145,24 @@ class TransactionMapper(Mapper):
 				}
 			)
 		return rows
+
+	# ------------------------------------------------------------------ Plausibilität
+	@staticmethod
+	def check_gross_total(doc, record: dict, *, label: str) -> None:
+		"""Vergleicht die ERPNext-Bruttosumme mit WeClapps `grossAmount`. Bei Abweichung > 1 ct
+		nur ein Error-Log-Eintrag (kein Abbruch) - wie das `_post_validation` im Vorgänger."""
+		wc_gross = record.get("grossAmount")
+		if wc_gross in (None, ""):
+			return
+		try:
+			diff = round(float(doc.grand_total or 0) - float(wc_gross), 2)
+		except (TypeError, ValueError):
+			return
+		if abs(diff) > 0.01:
+			frappe.log_error(
+				title=f"WeClapp Sync: Bruttosumme weicht ab ({label})",
+				message=f"{doc.name}: ERPNext {doc.grand_total} vs WeClapp {wc_gross} (Diff {diff})",
+			)
 
 	# ------------------------------------------------------------------ Kopf-Rabatt
 	@staticmethod

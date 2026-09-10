@@ -27,8 +27,8 @@ class QuotationMapper(TransactionMapper):
 		)
 
 	def target_name(self, record: dict) -> str | None:
-		num = record.get("quotationNumber")
-		return f"AN-{num}" if num else None
+		# ERPNext-Dokumentname = WeClapp-Angebotsnummer (kein Präfix).
+		return record.get("quotationNumber") or None
 
 	def upsert(self, record: dict) -> str | None:
 		if self.should_skip(record):
@@ -77,6 +77,8 @@ class QuotationMapper(TransactionMapper):
 			doc.save()
 		else:
 			doc.insert(set_name=name)
+
+		self.check_gross_total(doc, record, label="Angebot")
 
 		if settings.submit_documents and doc.docstatus == 0:
 			doc.submit()

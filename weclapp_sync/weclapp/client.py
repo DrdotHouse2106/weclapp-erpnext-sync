@@ -26,6 +26,12 @@ _TIMEOUT = (10, 180)
 
 _DEFAULT_PAGE_SIZE = 100
 
+# Last-Management (WeClapp API-Update): der Server schickt X-Weclapp-Wait-Ms / -Wait-Reason,
+# wenn er die Anfrage wegen Systemlast verzögert hat. Wir warten diese Zeit vor dem nächsten
+# Aufruf ab und retryen 429/503 gebremst. Sleeps sind gedeckelt, Retries begrenzt.
+_MAX_RETRIES = 4
+_MAX_WAIT_S = 30.0
+
 # WeClapp-Filter-Operator-Suffixe (Query-Param-Syntax: "<feld>-<op>=<wert>").
 # Live bestätigt 2026-09-07 gegen francetec.weclapp.com.
 FILTER_OPS = ("eq", "ne", "gt", "lt", "ge", "le", "null", "notnull", "like", "notlike", "in", "notin")
@@ -49,6 +55,7 @@ class WeClappClient:
 		self.api_token = api_token
 		self.page_size = page_size
 		self._session: requests.Session | None = None
+		self._pending_wait_s = 0.0  # vom Server per X-Weclapp-Wait-Ms angefordert
 
 	# ------------------------------------------------------------------ lifecycle
 	def __enter__(self) -> WeClappClient:
@@ -93,23 +100,51 @@ class WeClappClient:
 			)
 
 		url = self.base_url + path
-		response: requests.Response | None = None
-		try:
-			response = self.session.request(method="GET", url=url, params=params, timeout=_TIMEOUT)
-			response.raise_for_status()
-		except requests.RequestException as e:
-			if response is None:
+
+		# Vom Server zuvor angeforderte Wartezeit abwarten (Last-Management).
+		if self._pending_wait_s:
+			time.sleep(min(self._pending_wait_s, _MAX_WAIT_S))
+			self._pending_wait_s = 0.0
+
+		last_exc: Exception | None = None
+		for attempt in range(_MAX_RETRIES):
+			response: requests.Response | None = None
+			try:
+				response = self.session.request(method="GET", url=url, params=params, timeout=_TIMEOUT)
+			except requests.RequestException as e:
+				last_exc = WeClappApiError(f"Verbindungsfehler bei GET {url}: {e}", method="GET", url=url)
+				time.sleep(min(2**attempt, _MAX_WAIT_S))
+				continue
+
+			# Server bittet um Wartezeit für den nächsten Aufruf (auch bei 200).
+			wait_ms = response.headers.get("X-Weclapp-Wait-Ms")
+			if wait_ms and wait_ms.isdigit():
+				self._pending_wait_s = min(int(wait_ms) / 1000.0, _MAX_WAIT_S)
+
+			if response.status_code in (429, 503) and attempt < _MAX_RETRIES - 1:
+				retry_after = response.headers.get("Retry-After")
+				sleep_s = self._pending_wait_s or (
+					float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit()
+					else min(2**attempt, _MAX_WAIT_S)
+				)
+				self._pending_wait_s = 0.0
+				time.sleep(min(sleep_s, _MAX_WAIT_S))
+				continue
+
+			try:
+				response.raise_for_status()
+			except requests.RequestException as e:
 				raise WeClappApiError(
-					f"Verbindungsfehler bei GET {url}: {e}", method="GET", url=url
+					f"HTTP {response.status_code} bei GET {url}: {response.text[:500]}",
+					method="GET",
+					url=url,
+					status_code=response.status_code,
+					response_text=response.text,
 				) from e
-			raise WeClappApiError(
-				f"HTTP {response.status_code} bei GET {url}: {response.text[:500]}",
-				method="GET",
-				url=url,
-				status_code=response.status_code,
-				response_text=response.text,
-			) from e
-		return response
+			return response
+
+		assert last_exc is not None
+		raise last_exc
 
 	@staticmethod
 	def _merge_params(
