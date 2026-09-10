@@ -221,6 +221,24 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   = WeClapp-Angebot mit 0 Positionen (`should_skip` korrekt). **Angebots-Mapper verifiziert.**
   Danach voller Angebots-Import erfolgreich durchgelaufen.
 
+### Increment 14 (2026-09-10): Rechnungs-Mapper
+- `sync/mappers/sales_invoice.py` (`SalesInvoiceMapper`, registriert, 6/14): Name =
+  `<invoiceNumber>`, `_transaction`-Basis. `posting_date` aus `invoiceDate`, `due_date` =
+  `max(dueDate, invoiceDate)`, `update_stock=0` (Lagerabgang läuft über Lieferschein/Stock),
+  `payment_terms_template` = „Migration - unbegrenzt" (100 J.) + expliziter `payment_schedule`
+  mit dem echten `dueDate` - sonst füllt ERPNext das Template aus `Customer.payment_terms` und
+  lehnt unser `due_date` ab. `debit_to` lässt ERPNext aus `Customer.accounts` ziehen (= das
+  individuelle DATEV-Debitorenkonto).
+- **Gutschriften** (`salesInvoiceType == "CREDIT_NOTE"`): WeClapp führt Betrag/Menge positiv,
+  ERPNext bekommt `is_return=1` mit negierten Mengen/Steuern/Kopfrabatt, kein payment_schedule.
+  `check_gross_total(negate=is_return)`.
+- `setup/custom_fields._doc_link_fields()`: `wc_sales_order` (Link Sales Order) auf Sales Invoice.
+- `_transaction.check_gross_total` bekam `negate`-Param.
+- WeClapp: 5326 Rechnungen. `salesInvoiceItems` + `shippingCostItems`. Typen STANDARD_INVOICE /
+  CREDIT_NOTE. `netAmount <= 0` -> `should_skip` (Anomalie).
+- **Noch nicht getestet.** Feld-Mapping-Referenz + gelöste Fachprobleme: Vorgänger
+  invoice_migration.py + dessen CLAUDE.md (OSS-Konten, payment_terms-Falle).
+
 ### Increment 13 (2026-09-10): Auftrags-Mapper + API-Update + Belegnamen ohne Präfix
 - `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): Dokumentname =
   WeClapp-`orderNumber` (**kein Präfix**), gleiche `_transaction`-Basis wie Angebot (Positionen,

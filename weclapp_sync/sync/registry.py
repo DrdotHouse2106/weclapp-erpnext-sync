@@ -150,3 +150,14 @@ register(
 		depends_on=("customer", "article", "quotation"),
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="sales_invoice",
+		label="Rechnungen",
+		weclapp_doctype=WeClappDocType.SALES_INVOICE,
+		target_doctype="Sales Invoice",
+		mapper_path="weclapp_sync.sync.mappers.sales_invoice:SalesInvoiceMapper",
+		depends_on=("customer", "article", "sales_order"),
+	)
+)

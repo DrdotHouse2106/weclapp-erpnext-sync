@@ -166,14 +166,15 @@ class TransactionMapper(Mapper):
 
 	# ------------------------------------------------------------------ Plausibilität
 	@staticmethod
-	def check_gross_total(doc, record: dict, *, label: str) -> None:
-		"""Vergleicht die ERPNext-Bruttosumme mit WeClapps `grossAmount`. Bei Abweichung > 1 ct
-		nur ein Error-Log-Eintrag (kein Abbruch) - wie das `_post_validation` im Vorgänger."""
+	def check_gross_total(doc, record: dict, *, label: str, negate: bool = False) -> None:
+		"""Vergleicht die ERPNext-Bruttosumme mit WeClapps `grossAmount` (bei Gutschriften
+		negiert). Bei Abweichung > 1 ct nur ein Error-Log-Eintrag (kein Abbruch)."""
 		wc_gross = record.get("grossAmount")
 		if wc_gross in (None, ""):
 			return
 		try:
-			diff = round(float(doc.grand_total or 0) - float(wc_gross), 2)
+			expected = -float(wc_gross) if negate else float(wc_gross)
+			diff = round(float(doc.grand_total or 0) - expected, 2)
 		except (TypeError, ValueError):
 			return
 		if abs(diff) > 0.01:
