@@ -439,12 +439,22 @@ Hier stattdessen **UI-gesteuert**:
      seither über diesen Datensatz). WeClapp hat für ihn reichlich befüllte Attribute (u.a.
      `4444` -> `artikelbeschreibung_francetec`, aktiviert). Braucht nur einen frischen
      Artikel-Vollimport, kein Code-Fix.
-- **Item Tax Template doch gesetzt (2026-09-11, Nutzer-Nachfrage):** aus `article.taxRateType`
-  (`STANDARD`/`REDUCED`, 127 Artikel `REDUCED` im Bestand) -> `"19 % - FT"`/`"7 % - FT"` (auf der
-  Instanz schon vorhanden). **Nur relevant für künftige, von Hand angelegte Belege nach der
-  Live-Umstellung** - migrierte Belege buchen die Steuer weiterhin exakt pro Zeile als Actual,
-  unabhängig davon (kein Widerspruch zum oben dokumentierten Vorgänger-Konflikt, der betraf nur
-  migrierte Belege). `ArticleMapper._item_tax_rows()`.
+- **Item Tax Template: gesetzt, sofort als Regression zurückgerollt (2026-09-11).** Auf
+  Nutzer-Nachfrage ("woher weiß ERPNext bei künftigen Belegen den Satz?") aus `article.
+  taxRateType` (`STANDARD`/`REDUCED`, 127 Artikel `REDUCED`) gesetzt - fälschlich als "betrifft
+  migrierte Belege nicht" eingeschätzt. **War falsch:** reproduzierte 1:1 den vom Vorgänger
+  dokumentierten "Item-Steuer-Template-Konflikt" ("Artikelbezogene Steuerdetails stimmen nicht
+  mit den Steuern und Abgaben überein") - live beim nächsten Vollimport 46 Angebote + 506
+  Aufträge gescheitert (ERPNext vergleicht den vom Template erwarteten Betrag gegen unsere
+  Actual-Zeilen, schlägt fehl sobald ein Artikel historisch zu einem anderen Satz verkauft
+  wurde). **Sofort zurückgerollt:** `to_doc_fields()` schreibt `"taxes": []` wieder **explizit**
+  (nicht nur weglassen - sonst bleibt ein einmal gesetztes Template stehen, weil ein fehlender
+  Dict-Key die bestehende Kindtabelle nicht anfasst). `_item_tax_rows()`/`_TAX_RATE_TEMPLATES`
+  bleiben als unbenutzter, fertiger Baustein für einen **separaten, einmaligen Schritt kurz vor
+  der Live-Umstellung** (analog zur `sales_payment`-Entscheidung, Increment 15) - nicht Teil des
+  laufenden Syncs. **Nutzer muss den Artikel-Vollimport erneut laufen lassen**, um die während
+  des kurzen Regressionsfensters gesetzten Templates wieder zu entfernen, bevor Angebot/Auftrag/
+  Rechnung erneut importiert werden.
 - **Offen am Zusatzfeld-Mapper:** Belegzeilen-Entities (`salesOrderItem` etc.) - Felder werden
   angelegt, aber `_transaction.build_lines` ruft `ca.resolve` noch nicht pro Position;
   `crmEvent` (kein Mapper); neue WeClapp-Auswahlwerte brauchen erneutes „Laden" + „Anlegen",

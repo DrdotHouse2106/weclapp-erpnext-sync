@@ -18,11 +18,15 @@ Noch NICHT portiert (Folge-Schritt):
   - `articleSupplySource` hat 87k Einträge, muss pro Artikel gefiltert nachgeladen werden.
 - Artikelbilder (WeClapp-Cache, hier nicht vorhanden)
 
-Item Tax Template: für MIGRIERTE Belege bewusst NICHT relevant (Steuer wird pro Belegzeile exakt
-aus WeClapp als "Actual"-Zeile gebucht, unabhängig vom Artikel-Default - ein statisches Template
-kollidierte im Vorgänger mit Artikeln, die historisch zu unterschiedlichen Sätzen verkauft
-wurden). Wird aber trotzdem aus `taxRateType` gesetzt, DAMIT künftige, von Hand in ERPNext
-angelegte Belege (nach Live-Umstellung) den richtigen Satz vorschlagen.
+Item Tax Template: bewusst NICHT gesetzt (`taxes` wird explizit leer geschrieben). Steuer wird
+pro Belegzeile exakt aus WeClapp als "Actual"-Zeile gebucht, unabhängig vom Artikel-Default.
+**2026-09-11: kurzzeitig aus `taxRateType` gesetzt (für künftige, von Hand angelegte Belege nach
+Live-Umstellung), aber SOFORT zurückgerollt** - reproduziert exakt den vom Vorgänger
+dokumentierten "Item-Steuer-Template-Konflikt": ERPNext vergleicht bei jedem Speichern den vom
+Template erwarteten Steuerbetrag mit unseren Actual-Zeilen und lehnt jeden Beleg ab, dessen
+Artikel historisch zu einem anderen Satz verkauft wurde (46 Angebote + 506 Aufträge live
+gescheitert). `_item_tax_rows()`/`_TAX_RATE_TEMPLATES` bleiben unten als fertiger Baustein für
+einen SEPARATEN, einmaligen Schritt kurz vor der Live-Umstellung (nicht Teil des laufenden Syncs).
 """
 
 from __future__ import annotations
@@ -77,7 +81,11 @@ class ArticleMapper(Mapper):
 			"manufacturer_part_no": record.get("manufacturerPartNumber") or None,
 			"country_of_origin": h.country_name(record.get("countryOfOriginCode")),
 			"barcodes": self._barcodes(record),
-			"taxes": self._item_tax_rows(record),
+			# Explizit LEER, nicht weggelassen - räumt das Item Tax Template wieder ab, das der
+			# kurzzeitige Fix vom 2026-09-11 gesetzt hatte (Regression, siehe Moduldocstring).
+			# Ohne das explizite [] bliebe ein einmal gesetztes Template stehen, weil ein
+			# fehlender Dict-Key beim Sync die bestehende Kindtabelle nicht anfasst.
+			"taxes": [],
 		}
 		# description/item_group nur bei Neuanlage - können später von anderen Integrationen
 		# (Shopware) mitgepflegt werden (siehe reference article_migration.py).
@@ -94,8 +102,9 @@ class ArticleMapper(Mapper):
 
 	@classmethod
 	def _item_tax_rows(cls, record: dict) -> list[dict]:
-		"""Nur für künftige, von Hand angelegte Belege (siehe Moduldocstring) - migrierte
-		Belege buchen die Steuer ohnehin exakt pro Zeile, unabhängig davon."""
+		"""**Aktuell NICHT aufgerufen** (siehe Moduldocstring - Regression 2026-09-11). Fertiger
+		Baustein für einen separaten, einmaligen Schritt kurz vor der Live-Umstellung, nicht für
+		den laufenden Sync (kollidiert dort mit den Actual-Steuerzeilen migrierter Belege)."""
 		base = cls._TAX_RATE_TEMPLATES.get(record.get("taxRateType"))
 		if not base:
 			return []
