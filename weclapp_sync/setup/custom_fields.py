@@ -194,6 +194,48 @@ def _doc_link_fields() -> dict[str, list[dict]]:
 				"translatable": 0,
 			},
 		],
+		"Purchase Order": [
+			{
+				"fieldname": "wc_sales_order",
+				"label": "Verkaufsauftrag (WeClapp, Streckengeschäft)",
+				"fieldtype": "Link",
+				"options": "Sales Order",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_last_modified",
+				"translatable": 0,
+			}
+		],
+		"Purchase Invoice": [
+			{
+				"fieldname": "wc_purchase_order",
+				"label": "Bestellung (WeClapp)",
+				"fieldtype": "Link",
+				"options": "Purchase Order",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_last_modified",
+				"translatable": 0,
+			},
+			{
+				"fieldname": "wc_paid",
+				"label": "Bezahlt (WeClapp)",
+				"fieldtype": "Check",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_purchase_order",
+				"description": "Rein informativ aus WeClapp `paid`/`paymentStatus` - kein Zahlungsabgleich, keine Buchung. Siehe CLAUDE.md \"Zahlungsabgleich\".",
+			},
+			{
+				"fieldname": "wc_payment_status",
+				"label": "Zahlstatus (WeClapp)",
+				"fieldtype": "Data",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_paid",
+				"translatable": 0,
+			},
+		],
 		"Delivery Note": [
 			{
 				"fieldname": "wc_sales_order",

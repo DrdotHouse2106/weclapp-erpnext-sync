@@ -172,3 +172,25 @@ register(
 		depends_on=("customer", "article", "sales_order"),
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="purchase_order",
+		label="Bestellungen",
+		weclapp_doctype=WeClappDocType.PURCHASE_ORDER,
+		target_doctype="Purchase Order",
+		mapper_path="weclapp_sync.sync.mappers.purchase_order:PurchaseOrderMapper",
+		depends_on=("supplier", "article", "sales_order"),
+	)
+)
+
+register(
+	ObjectTypeSpec(
+		key="purchase_invoice",
+		label="Eingangsrechnungen",
+		weclapp_doctype=WeClappDocType.PURCHASE_INVOICE,
+		target_doctype="Purchase Invoice",
+		mapper_path="weclapp_sync.sync.mappers.purchase_invoice:PurchaseInvoiceMapper",
+		depends_on=("supplier", "article", "purchase_order"),
+	)
+)

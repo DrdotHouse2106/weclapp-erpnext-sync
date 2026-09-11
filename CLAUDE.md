@@ -248,6 +248,36 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   - 39 skip = `netAmount <= 0` (Anomalien), korrekt.
 - **2. Testlauf: 5287 ok, 0 fail, 39 skip.** **Rechnungs-Mapper fertig + verifiziert.**
 
+### Increment 17 (2026-09-11): Einkaufsseite (Bestellung + Eingangsrechnung)
+- `sync/mappers/purchase_order.py` (`PurchaseOrderMapper`, registriert, 8/14): spiegelbildlich
+  zu `sales_order.py` - `_transaction`-Basis mit `is_selling=False` (`expense_account`,
+  Einkaufssteuer-Fallback `default_purchase_tax_account`). Name = WeClapp-`purchaseOrderNumber`.
+  `schedule_date` aus `plannedDeliveryDate` (Header+Position), Lager aus `warehouseName`
+  (wie Auftrag). `wc_sales_order`-Link für Streckengeschäft (WeClapp `salesOrderNumber` an der
+  Bestellung, falls direkt für einen Verkaufsauftrag beim Lieferanten bestellt).
+- `sync/mappers/purchase_invoice.py` (`PurchaseInvoiceMapper`, registriert, 9/14): Name =
+  WeClapp-**`internalInvoiceNumber`** (FranceTecs eigene Nummer) - **nicht** `invoiceNumber`
+  (das ist die Nummer des Lieferanten, landet in `bill_no`). `update_stock=0`, 100-Jahre-
+  Zahlungsziel-Template + expliziter `payment_schedule` (gleiche `Customer`/`Supplier.
+  payment_terms`-Falle wie bei Sales Invoice). Gutschriften (`purchaseInvoiceType ==
+  "CREDIT_NOTE"`) negiert wie beim Verkauf. `wc_paid`/`wc_payment_status` info-only (gleiche
+  Design-Entscheidung wie Sales Invoice, siehe Increment 15). Belegkette `wc_purchase_order`
+  aus `purchaseOrders[0].id` -> Auflösung über `frappe.db.get_value("Purchase Order",
+  {"wc_id": ...})` (einfacher als die Vorgänger-Lösung mit eigener id->Nummer-Lookup-Tabelle,
+  weil unsere Belege sowieso `wc_id` führen).
+  `importSalesTaxAmount` (Einfuhrumsatzsteuer bei Drittland-Importen, ~2/500) als zusätzliche
+  Actual-Steuerzeile auf das Fallback-Einkaufssteuerkonto (kein eigenes `taxId`, daher kein
+  Steuer-Mapping-Eintrag möglich).
+  **`should_skip` schärfer als der Vorgänger:** zusätzlich `status not in (OCR_VERIFICATION,
+  CANCELLED)` - live geprüft, `OCR_VERIFICATION`-Belege (unverifizierte OCR-Entwürfe) haben
+  teils schon eine `supplierNumber`, der reine Lieferanten-Check reicht hier nicht mehr;
+  `CANCELLED` hat reale (auch positive) `netAmount`-Werte, würde sonst durchrutschen.
+- `setup/custom_fields.py`: `wc_sales_order` (Purchase Order), `wc_purchase_order`/`wc_paid`/
+  `wc_payment_status` (Purchase Invoice).
+- WeClapp: 667 Bestellungen, 2885 Eingangsrechnungen (482 STANDARD_INVOICE + 18 CREDIT_NOTE in
+  einer 500er-Stichprobe der bereits abgeschlossenen, `OPEN_ITEM_CREATED`/`CANCELLED`).
+- **Noch nicht getestet.**
+
 ### Increment 16 (2026-09-11): Lieferschein-Mapper
 - `sync/mappers/shipment.py` (`ShipmentMapper`, registriert, 7/14): Name = WeClapp-`shipmentNumber`.
   **Bleibt immer Entwurf (docstatus 0), egal was `submit_documents` sagt** - ein submitteter
