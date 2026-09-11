@@ -276,7 +276,12 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   `wc_payment_status` (Purchase Invoice).
 - WeClapp: 667 Bestellungen, 2885 Eingangsrechnungen (482 STANDARD_INVOICE + 18 CREDIT_NOTE in
   einer 500er-Stichprobe der bereits abgeschlossenen, `OPEN_ITEM_CREATED`/`CANCELLED`).
-- **Noch nicht getestet.**
+- **1. Testlauf: purchase_order 100/0, purchase_invoice 96/0/4 (1 Seite), 0 Bruttoabweichungen,
+  Stichprobe cent-genau.** Dabei gefunden: WeClapp `purchaseInvoice.paid` ist bei **allen**
+  Belegen `null` (anders als `salesInvoice`, wo das Bool zuverlässig gesetzt ist) - `wc_paid`
+  wäre sonst immer 0 gewesen. Fix: `wc_paid` jetzt zusätzlich aus `paymentStatus == "PAID"`
+  abgeleitet (`record.get("paid") or record.get("paymentStatus") == "PAID"`), in **beiden**
+  Rechnungs-Mappern (sales_invoice + purchase_invoice) aus Konsistenzgründen.
 
 ### Increment 16 (2026-09-11): Lieferschein-Mapper
 - `sync/mappers/shipment.py` (`ShipmentMapper`, registriert, 7/14): Name = WeClapp-`shipmentNumber`.

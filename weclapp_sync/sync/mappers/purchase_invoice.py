@@ -104,7 +104,7 @@ class PurchaseInvoiceMapper(TransactionMapper):
 				"wc_id": str(record.get("id") or "") or None,
 				"wc_last_modified": str(record.get("lastModifiedDate") or "") or None,
 				# Rein informativ - kein Zahlungsabgleich für Altbestand, siehe CLAUDE.md.
-				"wc_paid": 1 if record.get("paid") else 0,
+				"wc_paid": 1 if (record.get("paid") or record.get("paymentStatus") == "PAID") else 0,
 				"wc_payment_status": record.get("paymentStatus") or None,
 			}
 		)
