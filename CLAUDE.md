@@ -248,6 +248,29 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   - 39 skip = `netAmount <= 0` (Anomalien), korrekt.
 - **2. Testlauf: 5287 ok, 0 fail, 39 skip.** **Rechnungs-Mapper fertig + verifiziert.**
 
+### Increment 15 (2026-09-11): Zahlungsabgleich - Design-Entscheidung (mit Nutzer abgestimmt)
+**Kein `sales_payment`-Mapper mit Payment Entries für den historischen Bestand.** Grund: Solange
+`submit_documents = 0` ist, sind alle importierten Belege Entwürfe (docstatus 0) - die erzeugen
+KEINE echte GL-Buchung/Bestandsbewegung. Die alten Rechnungen sind in WeClapp (und beim
+Steuerberater) längst real gebucht; sie in ERPNext zusätzlich zu "submitten" wäre eine
+Doppelbuchung reiner Vergangenheit. Ein Entwurf-Payment-Entry dazu würde ebenfalls nichts Echtes
+buchen und den offenen Betrag der (auch nicht submitteten) Rechnung nicht mal verändern - der
+ganze Vorgänger-Aufwand (Buchungsjournal-Abgleich für Bankkonto + Zahlung-vs-Abschreibung-
+Unterscheidung, siehe `reference/migration_logic/full_field_mapping/payment_entry_migration.py`)
+wäre für diesen Fall verschwendete Mühe.
+- **Stattdessen:** rein informative Felder direkt an der Rechnung, aus WeClapp `paid`/
+  `paymentStatus` (die Rechnung selbst führt das schon - kein Umweg über `salesOpenItem`/
+  `accountingTransaction` nötig): `wc_paid` (Check) + `wc_payment_status` (Data, Rohwert:
+  PAID/OPEN/CLEARED_WITH_CREDIT_NOTE/NO_OPEN_ITEM/...). In `sales_invoice.py` gesetzt.
+- **"Später zuordnen" geht ohne Zusatzarbeit:** die Rechnung existiert mit `wc_id` + WeClapp-
+  `invoiceNumber` als Name - eine künftige ECHTE Zahlung (live, nach Umstellung) referenziert sie
+  ganz normal über `reference_doctype: "Sales Invoice", reference_name: <Name>`.
+- **Für den Live-Betrieb** (wenn `submit_documents` an ist): dann braucht es einen echten
+  `sales_payment`-Mapper mit Payment Entries - aber nur für laufende, neue Zahlungen (Delta-Sync-
+  Volumen, nicht 5300 historische), dort kann die Vorgänger-Logik (Journal-Abgleich fürs
+  Bankkonto, Abschreibungs-Journal-Entries) als Vorlage dienen. **Noch nicht gebaut - erst wenn
+  der Nutzer live geht.**
+
 ### Increment 13 (2026-09-10): Auftrags-Mapper + API-Update + Belegnamen ohne Präfix
 - `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): Dokumentname =
   WeClapp-`orderNumber` (**kein Präfix**), gleiche `_transaction`-Basis wie Angebot (Positionen,

@@ -174,7 +174,25 @@ def _doc_link_fields() -> dict[str, list[dict]]:
 				"no_copy": 1,
 				"insert_after": "wc_last_modified",
 				"translatable": 0,
-			}
+			},
+			{
+				"fieldname": "wc_paid",
+				"label": "Bezahlt (WeClapp)",
+				"fieldtype": "Check",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_sales_order",
+				"description": "Rein informativ aus WeClapp `paid`/`paymentStatus` - kein Zahlungsabgleich, keine Buchung. Echte Payment Entries erst für laufende Zahlungen nach Live-Umstellung.",
+			},
+			{
+				"fieldname": "wc_payment_status",
+				"label": "Zahlstatus (WeClapp)",
+				"fieldtype": "Data",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_paid",
+				"translatable": 0,
+			},
 		],
 	}
 

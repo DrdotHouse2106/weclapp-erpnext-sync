@@ -102,6 +102,11 @@ class SalesInvoiceMapper(TransactionMapper):
 				"title": (record.get("commission") or "")[:140] or None,
 				"wc_id": str(record.get("id") or "") or None,
 				"wc_last_modified": str(record.get("lastModifiedDate") or "") or None,
+				# Rein informativ - kein Zahlungsabgleich/Payment Entry für Altbestand (der ist
+				# in WeClapp/beim Steuerberater schon real gebucht; ein Entwurfsbeleg hier würde
+				# nichts Echtes buchen). Siehe CLAUDE.md "Zahlungsabgleich".
+				"wc_paid": 1 if record.get("paid") else 0,
+				"wc_payment_status": record.get("paymentStatus") or None,
 			}
 		)
 
