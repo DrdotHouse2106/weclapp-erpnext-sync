@@ -422,8 +422,7 @@ class WeClappSettings(Document):
 			return "Keine Zeile aktiviert – nichts angelegt."
 		doctypes = ", ".join(res["doctypes"]) or "–"
 		return (
-			f"{res['created']} Feld(er) neu angelegt, {res.get('repaired', 0)} umgekettet "
-			f"(Reihenfolge repariert) auf: {doctypes}. "
+			f"{res['touched']} Feld(er) angelegt/positioniert auf: {doctypes}. "
 			f"{res['enabled_rows']} Zusatzfeld(er) sind für den Sync aktiv."
 		)
 

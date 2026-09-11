@@ -225,10 +225,15 @@ def apply_custom_attribute_fields() -> dict:
 	"""Legt für alle aktivierten Mapping-Zeilen die fehlenden Custom Fields an (in Gruppen-
 	Sektionen unter einem Reiter „WeClapp Zusatzfelder"), MULTISELECT als „Table MultiSelect"
 	mit eigenem Werte-Doctype. **Selbstheilend:** die komplette Soll-Kette (Tab -> je Gruppe
-	eine Sektion -> Felder) wird bei jedem Lauf neu berechnet und bereits vorhandene Felder bei
-	Abweichung umgekettet - so repariert ein erneuter Lauf auch verirrte `insert_after`-Ketten
-	aus früheren Versionen (die konnten Felder außerhalb unseres Tabs landen lassen, sichtbar
-	als zweiter "Details"-Bereich - Nutzer-Fund 2026-09-11). Schreibt den Feld-Status zurück."""
+	eine Sektion -> Felder) wird bei jedem Lauf neu berechnet und **immer komplett** durch
+	`create_custom_fields()` geschickt - auch für längst vorhandene Felder. Das ist bewusst so:
+	die tatsächliche Formular-Position eines Feldes hängt an seinem `idx`, nicht am gespeicherten
+	`insert_after`-Wert - `idx` wird nur neu berechnet, wenn ein Custom Field reell über
+	`.save()` läuft (das macht `create_custom_fields()` für existierende Felder intern). Ein
+	direktes `frappe.db.set_value(..., "insert_after", ...)` (erste Version dieser Funktion)
+	ändert zwar den gespeicherten Wert, aber NICHT die tatsächliche Anzeige-Position - genau das
+	hat den zweiten, fälschlich "Details" gelabelten Bereich beim Nutzer nicht behoben (Fund
+	2026-09-11, zweimal nachgefasst). Schreibt den Feld-Status zurück."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 	settings = frappe.get_single("WeClapp Settings")
@@ -261,23 +266,14 @@ def apply_custom_attribute_fields() -> dict:
 				_field_def(row, fieldname, options)
 			)
 
-	created = 0
-	repaired = 0
+	touched = 0
 	for doctype, groups in by_doctype.items():
-		to_create, positions = _layout(doctype, groups)
-		if to_create:
-			create_custom_fields({doctype: to_create}, ignore_validate=True)
-			created += len(to_create)
-		for fieldname, insert_after in positions:
-			current = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "insert_after")
-			if current is not None and current != insert_after:
-				frappe.db.set_value(
-					"Custom Field", {"dt": doctype, "fieldname": fieldname}, "insert_after", insert_after,
-					update_modified=False,
-				)
-				repaired += 1
+		fields = _layout(doctype, groups)
+		if fields:
+			create_custom_fields({doctype: fields}, ignore_validate=True)
+			touched += len(fields)
 
-	if created or repaired:
+	if touched:
 		frappe.clear_cache()
 
 	# Feld-Status aller Zeilen aktualisieren
@@ -287,28 +283,23 @@ def apply_custom_attribute_fields() -> dict:
 	settings.save()
 
 	enabled = sum(1 for r in rows_all if r.enabled)
-	return {
-		"created": created,
-		"repaired": repaired,
-		"enabled_rows": enabled,
-		"doctypes": sorted(by_doctype),
-	}
+	return {"touched": touched, "enabled_rows": enabled, "doctypes": sorted(by_doctype)}
 
 
-def _layout(doctype: str, groups: dict[str, list[dict]]) -> tuple[list[dict], list[tuple[str, str]]]:
+def _layout(doctype: str, groups: dict[str, list[dict]]) -> list[dict]:
 	"""Baut die vollständige Soll-Kette für diesen Doctype: Tab „WeClapp Zusatzfelder" -> je
-	WeClapp-Gruppe eine Sektion -> Felder, deterministisch sortiert. Läuft bei jedem Aufruf über
-	ALLE aktivierten Felder (nicht nur neue), damit sich eine frühere Fehlkettung selbst heilt.
+	WeClapp-Gruppe eine Sektion -> Felder, deterministisch sortiert - für ALLE aktivierten
+	Felder, nicht nur neue (das ist es, was die Positionierung selbstheilend macht: jedes Feld
+	läuft bei jedem Lauf erneut durch `create_custom_fields()` und wird bei Abweichung über
+	dessen `.save()`-Pfad tatsächlich umsortiert, s. Docstring oben).
 
-	Rückgabe: (neu anzulegende Feld-Definitionen, [(fieldname, Soll-insert_after), ...] für die
-	Umkettung bereits vorhandener Felder). Die Position des Tab Breaks selbst wird NIE
-	nachträglich verändert - andere Apps könnten seither eigene Felder dahinter eingefügt haben,
-	das wäre Fremdterrain."""
-	to_create: list[dict] = []
-	positions: list[tuple[str, str]] = []
+	Die Position des Tab Breaks selbst wird nur beim allerersten Anlegen gesetzt - danach nie
+	verändert (andere Apps könnten seither eigene Felder dahinter eingefügt haben, das wäre
+	Fremdterrain)."""
+	out: list[dict] = []
 
 	if not _has_field(doctype, _TAB_FIELDNAME):
-		to_create.append(
+		out.append(
 			{
 				"fieldname": _TAB_FIELDNAME,
 				"label": _TAB_LABEL,
@@ -321,20 +312,13 @@ def _layout(doctype: str, groups: dict[str, list[dict]]) -> tuple[list[dict], li
 	ordered = sorted(groups, key=lambda g: (g == _NO_GROUP, g.lower()))
 	for group in ordered:
 		sec = f"wc_zf_sec_{_slug(group)}"
-		if not _has_field(doctype, sec):
-			to_create.append(
-				{"fieldname": sec, "label": group, "fieldtype": "Section Break", "insert_after": anchor}
-			)
-		positions.append((sec, anchor))
+		out.append({"fieldname": sec, "label": group, "fieldtype": "Section Break", "insert_after": anchor})
 		anchor = sec
 		for fd in groups[group]:
-			fieldname = fd["fieldname"]
-			if not _has_field(doctype, fieldname):
-				fd["insert_after"] = anchor
-				to_create.append(fd)
-			positions.append((fieldname, anchor))
-			anchor = fieldname
-	return to_create, positions
+			fd["insert_after"] = anchor
+			out.append(fd)
+			anchor = fd["fieldname"]
+	return out
 
 
 def _slug(text: str) -> str:

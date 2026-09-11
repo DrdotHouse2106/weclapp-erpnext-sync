@@ -456,11 +456,16 @@ Hier stattdessen **UI-gesteuert**:
      nach deren Feldern, außerhalb unseres Tabs - im Formular als zweiter, fälschlich
      "Details" gelabelter Bereich sichtbar (Frappe gruppiert positionslose Folgefelder unter
      den nächsten erreichbaren Tab-Kontext). **Fix: `apply_custom_attribute_fields()` jetzt
-     selbstheilend** - berechnet bei JEDEM Lauf die komplette Soll-Kette alle aktivierten
-     Felder (nicht nur neue) und kettet bestehende Felder bei Abweichung per
-     `frappe.db.set_value(..., "insert_after", ...)` um. Tab-Position selbst wird nie
-     angefasst (andere Apps könnten seither dahinter eingefügt haben). `res["repaired"]` im
-     Button-Ergebnistext.
+     selbstheilend** - berechnet bei JEDEM Lauf die komplette Soll-Kette für alle aktivierten
+     Felder (nicht nur neue). Tab-Position selbst wird nie angefasst (andere Apps könnten
+     seither dahinter eingefügt haben).
+     **Nachfassung (Nutzer meldete: Bereich immer noch doppelt):** der erste Fix reichte nicht -
+     er kettete bestehende Felder per `frappe.db.set_value(..., "insert_after", ...)` um, aber
+     das ändert die tatsächliche Formular-Position NICHT. Die hängt an `idx`, das Frappe nur
+     neu berechnet, wenn ein Custom Field regulär über `.save()` läuft. Jetzt läuft die
+     komplette Soll-Kette bei JEDEM Lauf für ALLE aktivierten Felder durch
+     `create_custom_fields()` - auch längst vorhandene (das übernimmt intern das `.save()`
+     inkl. `idx`-Neuberechnung). Rückgabe jetzt `res["touched"]` statt `created`/`repaired`.
   2. **Kein Bug - "Steuer"-Tab leer ist Absicht:** Item Tax Template wird bewusst NICHT gesetzt
      (Steuer läuft pro Belegzeile als "Actual", siehe Docstring in `article.py` + Vorgänger-
      CLAUDE.md Punkt 5 "Item-Steuer-Template-Konflikt").
