@@ -3,6 +3,15 @@ from frappe.model.document import Document
 
 from weclapp_sync.sync import registry
 
+# Erklärt, warum ein Objekttyp KEINEN eigenen Mapper hat (und ob das dauerhaft so bleibt oder
+# noch kommt) - "(Mapper fehlt)" allein legt bei jedem unregistrierten Typ nahe, es sei nur noch
+# nicht gebaut. Für article_price stimmt das nicht (steckt dauerhaft in article._sync_prices()).
+_UNREGISTERED_NOTES = {
+	"article_price": "steckt in „Artikel“, kein eigener Sync nötig",
+	"sales_payment": "erst für Live-Betrieb geplant, siehe CLAUDE.md",
+	"purchase_payment": "erst für Live-Betrieb geplant, siehe CLAUDE.md",
+}
+
 # WeClapp-tax-Feld -> Zielspalte in WeClapp Tax Mapping.
 # defaultNominalAccountNumber wird je nach Ein-/Verkauf auf income_ bzw. expense_account
 # gemappt (siehe populate_tax_mapping).
@@ -90,8 +99,11 @@ class WeClappSettings(Document):
 				"object_types",
 				{
 					"object_type": key,
-					"label": (spec.label if spec else _fallback_label(key))
-					+ ("" if spec else "  (Mapper fehlt)"),
+					"label": (
+						spec.label
+						if spec
+						else f"{_fallback_label(key)}  ({_UNREGISTERED_NOTES.get(key, 'Mapper fehlt')})"
+					),
 					"enabled": old.enabled if old else 0,
 					"last_sync_ms": old.last_sync_ms if old else 0,
 					"last_sync_at": old.last_sync_at if old else None,
