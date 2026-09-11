@@ -57,7 +57,6 @@ SYNC_ORDER: list[str] = [
 	"supplier",
 	"crm_event",
 	"article",
-	"article_price",
 	"stock_movement",
 	"quotation",
 	"sales_order",

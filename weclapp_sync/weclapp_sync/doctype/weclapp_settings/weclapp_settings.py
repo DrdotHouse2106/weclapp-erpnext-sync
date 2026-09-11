@@ -3,11 +3,10 @@ from frappe.model.document import Document
 
 from weclapp_sync.sync import registry
 
-# Erklärt, warum ein Objekttyp KEINEN eigenen Mapper hat (und ob das dauerhaft so bleibt oder
-# noch kommt) - "(Mapper fehlt)" allein legt bei jedem unregistrierten Typ nahe, es sei nur noch
-# nicht gebaut. Für article_price stimmt das nicht (steckt dauerhaft in article._sync_prices()).
+# Erklärt, warum ein Objekttyp KEINEN eigenen Mapper hat und noch kommt (Typen, die dauerhaft
+# keinen eigenen Mapper brauchen - z.B. article_price, steckt in article._sync_prices() - stehen
+# gar nicht erst in registry.SYNC_ORDER, damit sie hier auch nicht als Zeile auftauchen).
 _UNREGISTERED_NOTES = {
-	"article_price": "steckt in „Artikel“, kein eigener Sync nötig",
 	"sales_payment": "erst für Live-Betrieb geplant, siehe CLAUDE.md",
 	"purchase_payment": "erst für Live-Betrieb geplant, siehe CLAUDE.md",
 }

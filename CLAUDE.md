@@ -270,6 +270,14 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   bleibt ebenfalls unregistriert, weil bereits vollständig `article._sync_prices()` mit erledigt
   (WeClapp liefert `articlePrices` eingebettet im `article`-Payload, keine eigene Abfrage nötig).
 - **Noch nicht getestet.**
+- **Nutzer-Fund direkt danach:** die Objekttyp-Tabelle in den Settings zeigte `article_price`
+  trotzdem als eigene, ankreuzbare Zeile ("(Mapper fehlt)") - wirkte wie ein eigener, nur noch
+  nicht gebauter Sync-Schritt, obwohl er nie einen eigenen bekommt. Auf Nutzer-Wunsch **ganz aus
+  `registry.SYNC_ORDER` entfernt** (nicht nur umbeschriftet) - `article_price` taucht in der
+  Objekttyp-Tabelle jetzt gar nicht mehr auf (Tabelle wird bei jedem `validate()` aus
+  `SYNC_ORDER` neu aufgebaut, räumt die alte Zeile automatisch weg). **Effektiv 13 sinnvolle
+  Objekttypen insgesamt** (nicht mehr 14) - `sales_payment`/`purchase_payment` bleiben als
+  Zeilen mit erklärendem Hinweis stehen, weil die echt noch kommen (nur später).
 
 ### Increment 17 (2026-09-11): Einkaufsseite (Bestellung + Eingangsrechnung)
 - `sync/mappers/purchase_order.py` (`PurchaseOrderMapper`, registriert, 8/14): spiegelbildlich
