@@ -246,6 +246,7 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
     Jahr 0023). Fix: `h.clamp_posting_date()` klemmt Jahr außerhalb 2000..2100 auf den Beginn
     des frühesten Geschäftsjahres. In sales_invoice (posting/due) + sales_order (order_date).
   - 39 skip = `netAmount <= 0` (Anomalien), korrekt.
+- **2. Testlauf: 5287 ok, 0 fail, 39 skip.** **Rechnungs-Mapper fertig + verifiziert.**
 
 ### Increment 13 (2026-09-10): Auftrags-Mapper + API-Update + Belegnamen ohne Präfix
 - `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): Dokumentname =
