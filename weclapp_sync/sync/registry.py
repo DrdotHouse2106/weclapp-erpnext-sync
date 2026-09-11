@@ -161,3 +161,14 @@ register(
 		depends_on=("customer", "article", "sales_order"),
 	)
 )
+
+register(
+	ObjectTypeSpec(
+		key="shipment",
+		label="Lieferscheine",
+		weclapp_doctype=WeClappDocType.SHIPMENT,
+		target_doctype="Delivery Note",
+		mapper_path="weclapp_sync.sync.mappers.shipment:ShipmentMapper",
+		depends_on=("customer", "article", "sales_order"),
+	)
+)

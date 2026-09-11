@@ -194,6 +194,36 @@ def _doc_link_fields() -> dict[str, list[dict]]:
 				"translatable": 0,
 			},
 		],
+		"Delivery Note": [
+			{
+				"fieldname": "wc_sales_order",
+				"label": "Auftrag (WeClapp)",
+				"fieldtype": "Link",
+				"options": "Sales Order",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_last_modified",
+				"translatable": 0,
+			},
+			{
+				"fieldname": "wc_tracking_nummer",
+				"label": "Tracking-Nummer (WeClapp)",
+				"fieldtype": "Data",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_sales_order",
+				"translatable": 0,
+			},
+			{
+				"fieldname": "wc_versanddienstleister",
+				"label": "Versanddienstleister (WeClapp)",
+				"fieldtype": "Data",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "wc_tracking_nummer",
+				"translatable": 0,
+			},
+		],
 	}
 
 

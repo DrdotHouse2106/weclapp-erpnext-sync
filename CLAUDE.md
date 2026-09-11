@@ -248,6 +248,22 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   - 39 skip = `netAmount <= 0` (Anomalien), korrekt.
 - **2. Testlauf: 5287 ok, 0 fail, 39 skip.** **Rechnungs-Mapper fertig + verifiziert.**
 
+### Increment 16 (2026-09-11): Lieferschein-Mapper
+- `sync/mappers/shipment.py` (`ShipmentMapper`, registriert, 7/14): Name = WeClapp-`shipmentNumber`.
+  **Bleibt immer Entwurf (docstatus 0), egal was `submit_documents` sagt** - ein submitteter
+  Delivery Note bucht in ERPNext unbedingt auf den Lagerbestand (kein `update_stock`-Opt-out,
+  anders als Sales Invoice - im Vorgänger live bestätigt). Sobald `stock_movement` gebaut ist,
+  bildet der dieselbe Wareneinbewegung schon ab -> submitten würde doppelt abziehen.
+- `should_skip`: nur `status == "SHIPPED"` (NEW/DELIVERY_NOTE_PRINTED haben das Lager noch
+  nicht verlassen). WeClapp: 3351 shipments gesamt, in einer 500er-Stichprobe (älteste zuerst)
+  494 SHIPPED / 6 CANCELLED - gute Abdeckung.
+  Positionen: `rate`/`price_list_rate` = 0 + `is_free_item=1` (reine Lieferdokumentation, keine
+  Finanzdaten - die stehen auf der Rechnung; `is_free_item` verhindert wie bei den anderen
+  Belegen einen Preislisten-Override der 0). Lager aus `record.warehouseName` (Header-Feld,
+  wie bei `sales_order` - kein Pick-Storage-Place-Feingranulat, rein informativ ohnehin).
+- Felder: `wc_sales_order` (Link), `wc_tracking_nummer`, `wc_versanddienstleister`.
+- **Noch nicht getestet.**
+
 ### Increment 15 (2026-09-11): Zahlungsabgleich - Design-Entscheidung (mit Nutzer abgestimmt)
 **Kein `sales_payment`-Mapper mit Payment Entries für den historischen Bestand.** Grund: Solange
 `submit_documents = 0` ist, sind alle importierten Belege Entwürfe (docstatus 0) - die erzeugen
