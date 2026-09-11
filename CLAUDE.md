@@ -439,6 +439,12 @@ Hier stattdessen **UI-gesteuert**:
      seither über diesen Datensatz). WeClapp hat für ihn reichlich befüllte Attribute (u.a.
      `4444` -> `artikelbeschreibung_francetec`, aktiviert). Braucht nur einen frischen
      Artikel-Vollimport, kein Code-Fix.
+- **Item Tax Template doch gesetzt (2026-09-11, Nutzer-Nachfrage):** aus `article.taxRateType`
+  (`STANDARD`/`REDUCED`, 127 Artikel `REDUCED` im Bestand) -> `"19 % - FT"`/`"7 % - FT"` (auf der
+  Instanz schon vorhanden). **Nur relevant für künftige, von Hand angelegte Belege nach der
+  Live-Umstellung** - migrierte Belege buchen die Steuer weiterhin exakt pro Zeile als Actual,
+  unabhängig davon (kein Widerspruch zum oben dokumentierten Vorgänger-Konflikt, der betraf nur
+  migrierte Belege). `ArticleMapper._item_tax_rows()`.
 - **Offen am Zusatzfeld-Mapper:** Belegzeilen-Entities (`salesOrderItem` etc.) - Felder werden
   angelegt, aber `_transaction.build_lines` ruft `ca.resolve` noch nicht pro Position;
   `crmEvent` (kein Mapper); neue WeClapp-Auswahlwerte brauchen erneutes „Laden" + „Anlegen",

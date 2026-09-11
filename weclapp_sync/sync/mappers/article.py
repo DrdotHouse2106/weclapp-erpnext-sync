@@ -17,8 +17,12 @@ Noch NICHT portiert (Folge-Schritt):
 - Bezugsquellen (`supplySources` -> Item Supplier / item_defaults.default_supplier / Einkaufspreis)
   - `articleSupplySource` hat 87k Einträge, muss pro Artikel gefiltert nachgeladen werden.
 - Artikelbilder (WeClapp-Cache, hier nicht vorhanden)
-- Item Tax Template - bewusst NICHT (siehe reference _map_item_taxes: Steuer wird pro Belegzeile
-  als "Actual" gebucht)
+
+Item Tax Template: für MIGRIERTE Belege bewusst NICHT relevant (Steuer wird pro Belegzeile exakt
+aus WeClapp als "Actual"-Zeile gebucht, unabhängig vom Artikel-Default - ein statisches Template
+kollidierte im Vorgänger mit Artikeln, die historisch zu unterschiedlichen Sätzen verkauft
+wurden). Wird aber trotzdem aus `taxRateType` gesetzt, DAMIT künftige, von Hand in ERPNext
+angelegte Belege (nach Live-Umstellung) den richtigen Satz vorschlagen.
 """
 
 from __future__ import annotations
@@ -73,6 +77,7 @@ class ArticleMapper(Mapper):
 			"manufacturer_part_no": record.get("manufacturerPartNumber") or None,
 			"country_of_origin": h.country_name(record.get("countryOfOriginCode")),
 			"barcodes": self._barcodes(record),
+			"taxes": self._item_tax_rows(record),
 		}
 		# description/item_group nur bei Neuanlage - können später von anderen Integrationen
 		# (Shopware) mitgepflegt werden (siehe reference article_migration.py).
@@ -82,6 +87,23 @@ class ArticleMapper(Mapper):
 
 		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
 		return fields
+
+	# WeClapp article.taxRateType -> Basis-Name des passenden ERPNext Item Tax Template
+	# (Company-Abbr wird angehängt: "19 % - FT").
+	_TAX_RATE_TEMPLATES = {"STANDARD": "19 %", "REDUCED": "7 %"}
+
+	@classmethod
+	def _item_tax_rows(cls, record: dict) -> list[dict]:
+		"""Nur für künftige, von Hand angelegte Belege (siehe Moduldocstring) - migrierte
+		Belege buchen die Steuer ohnehin exakt pro Zeile, unabhängig davon."""
+		base = cls._TAX_RATE_TEMPLATES.get(record.get("taxRateType"))
+		if not base:
+			return []
+		abbr = h.company_abbr()
+		name = f"{base} - {abbr}" if abbr else base
+		if not frappe.db.exists("Item Tax Template", name):
+			return []
+		return [{"item_tax_template": name}]
 
 	@staticmethod
 	def _barcodes(record: dict) -> list[dict]:
