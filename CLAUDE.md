@@ -298,8 +298,17 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   wie bei `sales_order` - kein Pick-Storage-Place-Feingranulat, rein informativ ohnehin).
 - Felder: `wc_sales_order` (Link), `wc_tracking_nummer`, `wc_versanddienstleister`.
 - **Noch nicht getestet.**
-
-### Increment 15 (2026-09-11): Zahlungsabgleich - Design-Entscheidung (mit Nutzer abgestimmt)
+- **Nutzer-Fund nach dem ersten Vollimport:** Lieferadresse fehlte, nur Rechnungsadresse da.
+  Ursache: ohne explizites Setzen zieht ERPNext nur die Kunden-Standardadresse; WeClapp führt
+  am Shipment aber eine EIGENE `recipientAddress`/`invoiceAddress` (kein Adress-Datensatz mit
+  eigener id, nur eingebettet), die abweichen kann (Live-Beispiel geprüft: id 2004884 - dort
+  identisch, aber strukturell eigenständig). Fix: `_match_customer_address()` sucht eine
+  bestehende Kunden-Address mit gleicher Straße/PLZ (dann Link `shipping_address_name`/
+  `customer_address`), sonst nur Text (`shipping_address`/`address_display` via
+  `_address_text()`). **Lieferscheinnummer-Frage geklärt:** ist da (`name` = `shipmentNumber`,
+  live verifiziert: id 2004884 -> ERPNext-Name "5243" = WeClapp `shipmentNumber`) - nur nicht
+  die fett angezeigte Titelzeile, die zeigt bei Delivery Note laut Doctype-Meta `customer_name`
+  (`title_field`, ERPNext-Standardverhalten) - Nummer steht in URL/ID-Zeile/Listenansicht.
 **Kein `sales_payment`-Mapper mit Payment Entries für den historischen Bestand.** Grund: Solange
 `submit_documents = 0` ist, sind alle importierten Belege Entwürfe (docstatus 0) - die erzeugen
 KEINE echte GL-Buchung/Bestandsbewegung. Die alten Rechnungen sind in WeClapp (und beim

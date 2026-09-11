@@ -13,6 +13,12 @@ bewusst 0, `is_free_item=1` - sonst zieht ERPNext einen Preislisten-Preis).
 
 Nur `status == "SHIPPED"` Sendungen sind eine echte Warenbewegung (NEW/DELIVERY_NOTE_PRINTED
 haben das Lager noch nicht verlassen).
+
+Liefer-/Rechnungsadresse kommt aus dem Shipment selbst (`recipientAddress`/`invoiceAddress`) -
+die kann von der beim Kunden hinterlegten Standardadresse abweichen, ERPNexts automatische
+Adress-Vorbelegung würde sonst nur die Kunden-Rechnungsadresse ziehen und die Lieferadresse leer
+lassen (live beim Nutzer beobachtet). Wird auf eine vorhandene Kunden-Address gemappt, wenn
+Straße+PLZ übereinstimmen, sonst nur als Text (`shipping_address`/`address_display`) gesetzt.
 """
 
 from __future__ import annotations
@@ -24,6 +30,41 @@ from weclapp_sync.sync.mappers import _custom_attributes as ca
 from weclapp_sync.sync.mappers._transaction import TransactionMapper, _line_title, resolve_line_item
 from weclapp_sync.sync.mappers.base import Mapper
 from weclapp_sync.sync.settings import get_settings
+
+
+def _match_customer_address(customer_name: str | None, addr: dict) -> str | None:
+	"""Findet eine bereits importierte Address des Kunden mit gleicher Straße/PLZ, um die
+	Shipment-eigene Adresse (kein WeClapp-Adress-Datensatz mit eigener id, nur ein eingebettetes
+	Objekt) auf einen bestehenden ERPNext-Address-Link zu heben, statt sie unverlinkt zu lassen."""
+	street = (addr or {}).get("street1")
+	zipcode = (addr or {}).get("zipcode")
+	if not (customer_name and street and zipcode):
+		return None
+	links = frappe.get_all(
+		"Dynamic Link",
+		filters={"link_doctype": "Customer", "link_name": customer_name, "parenttype": "Address"},
+		pluck="parent",
+	)
+	if not links:
+		return None
+	return frappe.db.get_value(
+		"Address", {"name": ["in", links], "address_line1": street, "pincode": zipcode}, "name"
+	)
+
+
+def _address_text(addr: dict) -> str:
+	"""Rendert ein WeClapp-Adress-Objekt (street1/zipcode/city/countryCode) als HTML-Zeilen,
+	analog zu ERPNexts eigenem `address_display`."""
+	if not addr:
+		return ""
+	lines = [line for line in (addr.get("street1"), addr.get("street2")) if line]
+	line2 = " ".join(p for p in (addr.get("zipcode"), addr.get("city")) if p)
+	if line2:
+		lines.append(line2)
+	country = h.country_name(addr.get("countryCode"))
+	if country:
+		lines.append(country.upper())
+	return "<br>\n".join(lines)
 
 
 class ShipmentMapper(Mapper):
@@ -102,6 +143,24 @@ class ShipmentMapper(Mapper):
 		son = record.get("salesOrderNumber")
 		if son and frappe.db.exists("Sales Order", son):
 			doc.wc_sales_order = son
+
+		# WeClapp führt am Shipment eine EIGENE Liefer-/Rechnungsadresse (`recipientAddress`/
+		# `invoiceAddress`) - die kann von der beim Kunden hinterlegten Standardadresse abweichen
+		# (z.B. einmalige Lieferung an eine andere Anschrift). Ohne das explizit zu setzen, zieht
+		# ERPNext nur die Kunden-Standardadresse (Rechnungsadresse) und lässt die Lieferadresse leer.
+		customer = record.get("recipientCustomerNumber")
+		recipient_addr = record.get("recipientAddress")
+		if recipient_addr:
+			match = _match_customer_address(customer, recipient_addr)
+			if match:
+				doc.shipping_address_name = match
+			doc.shipping_address = _address_text(recipient_addr)
+		invoice_addr = record.get("invoiceAddress")
+		if invoice_addr:
+			match = _match_customer_address(customer, invoice_addr)
+			if match:
+				doc.customer_address = match
+			doc.address_display = _address_text(invoice_addr)
 
 		doc.set("items", items)
 		doc.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
