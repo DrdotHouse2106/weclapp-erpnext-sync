@@ -40,24 +40,32 @@ Danach erscheint im Desk der Bereich **WeClapp Sync** (Workspace). Dort **WeClap
 Objekttypen auswählen, „WeClapp Sync aktiv" setzen. Für den Erstimport „Vollimport jetzt
 starten"; für den laufenden Betrieb „Automatischen Delta-Sync aktivieren".
 
-## Stand (2026-09-08)
+## Stand (2026-09-11)
 
-**Increment 1 + 2: App-Gerüst, Unterbau, Setup-Layer, erster (reduzierter) Kunden-Mapper.**
+**Registry: 6 von 14 Objekttypen registriert** (Kunde, Lieferant, Artikel, Angebot, Auftrag,
+Rechnung). Details/Fachprobleme/Increments: `CLAUDE.md`.
 
-| Bereich | Status |
+### Getestet (Vollimport gegen die echte Testinstanz `francetec.frappe.cloud`, 0 Fehler bzw.
+alle Restfehler geklärt; Bruttosummen wo zutreffend cent-genau gegen WeClapp `grossAmount`
+verprobt)
+
+| Objekttyp | Ergebnis |
 |---|---|
-| Frappe-App-Grundgerüst (`pyproject.toml`, `hooks.py`, `modules.txt`, `install.py`) | ✅ |
-| Read-only WeClapp-Client – GET-only hart erzwungen, `iter_pages()`/`iter_all()` als Generatoren (kein Cache-all), `lastModifiedDate`-Delta-Filter, streamender Dokument-Download | ✅ live gegen echte API getestet (Paginierung + Delta) |
-| Doctypes: **WeClapp Settings** (Single, inkl. Mapping-Standardwerte), **WeClapp Sync Object Type** (Child), **WeClapp Sync Run** (+ Child), **WeClapp Sync Log** | ✅ |
-| Sync-Engine – Unterbau Vollimport/Delta, seitenweise + Commit pro Seite, Savepoint + Weiterlauf pro Datensatz, resumierbarer Seiten-Cursor, Fehler-Log pro Datensatz | ✅ Grundgerüst |
-| Scheduler-Anbindung – Cron-Tick enqueued nur den Job, Stale-Recovery | ✅ |
-| Setup-Layer (`weclapp_sync/setup/`) – Custom Fields (`wc_id`/`wc_last_modified` + `wc_opt_in_*`/`wc_zahlungsart`/`wc_fax`), `autoname=Prompt`-Property-Setter; läuft bei `after_install`/`after_migrate` und vor dem Vollimport | ✅ |
-| `erpnext_helpers.py` – Port von `en_helper.py` (Datum, Telefon, HTML-Strip, Territory, Country, UOM) | ✅ |
-| Objekttyp-Registry + feste Reihenfolge | ✅ – **1 von 14 Typen registriert (Kunden)** |
-| **Kunden-Mapper** – Kern-`Customer`-Dokument (Name, Gruppe, Typ, Währung, USt-IdNr., Notiz, Opt-Ins, `wc_id`) | ⚠️ reduziert – **ohne Adressen, Kontakte, Bankkonten, Personenkonto, Zusatzfelder** (jeweils eigener Folge-Schritt) |
-| Übrige Mapper (Lieferant, Artikel, Rechnung, Auftrag, Zahlung, …) | ❌ ausstehend |
-| Datenintensive `setup_*()`-Äquivalente (Konten, Lager, Geschäftsjahre, Zahlungsbedingungen, Personenkonten, …) | ❌ ausstehend |
+| **Kunde** | 5830 Kunden, 0 Fehler (inkl. Adressen, Kontakte, Bankkonten, Personenkonto, belegart-spezifische E-Mails) |
+| **Lieferant** | 396 Lieferanten, 0 Fehler |
+| **Artikel** | 6210 Artikel, 0 Fehler (inkl. Barcode, Hersteller, Artikelgruppe, volle Preishistorie über alle Preiskanäle) |
+| **Angebot** | Vollimport, 0 Fehler, Summen cent-genau |
+| **Auftrag** | 3544 Aufträge, 0 Fehler (bis auf 1 korrekt übersprungene Retoure), Summen cent-genau, Lager-/Liefertermin-Logik geklärt |
+| **Rechnung** | 5287 Rechnungen, 0 Fehler (39 korrekt übersprungene Nullrechnungen), inkl. Gutschriften (`is_return`), Summen cent-genau |
+| **Zusatzfelder (WeClapp customAttributes)** | UI-gesteuertes Mapping gebaut (Reiter „Zusatzfelder" in den Settings) inkl. Table-MultiSelect-Generierung - **Feldauswahl/-anlage selbst noch nicht vom Nutzer final durchgespielt** |
+| Delta-Sync-Mechanismus (Watermark, Scheduler, Wiederaufnahme, Abbrechen-Button) | Grundgerüst läuft, Watermarks für Kunde/Lieferant/Artikel gesetzt - **noch kein längerer Dauerbetrieb beobachtet** |
 
-Nächster Schritt: Kunden-Mapper vervollständigen (Adressen + Kontakte, wg. E-Mail/Telefon-Abdeckung
-im Altbestand kritisch), dann Lieferanten- und Artikel-Mapper.
-Details, Architektur-Plan und offene Fragen: `CLAUDE.md`.
+### Noch nicht gebaut / nicht getestet
+
+- **Zahlungsabgleich** (`sales_payment`, WeClapp `salesOpenItem`/`accountingTransaction` → `Payment Entry`/Journal Entry für Abschreibungen) - fachlich der komplexeste verbleibende Teil, siehe `CLAUDE.md`
+- Einkaufsseite komplett: `purchase_order`, `purchase_invoice`, `purchase_payment`
+- `shipment`/Delivery Note, `stock_movement`, `crm_event`
+- Belegketten-Rückwärtsverknüpfung (`post_run`, z. B. Kunde ⇄ letzte Rechnung)
+- `apply_wc_blocks` (gesperrte/inaktive Kunden, Lieferanten, Artikel aus WeClapp übernehmen)
+- Datenintensive `setup_*()`-Reste (Lager/Konten/Steuer-Templates - meist instanzspezifisch, oft schon vorhanden)
+- Start-Workspace-Sichtbarkeit auf der Desk-Startseite (Datensatz korrekt, Anzeige beim Nutzer zuletzt noch nicht bestätigt)
