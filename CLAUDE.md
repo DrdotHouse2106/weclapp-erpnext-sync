@@ -271,6 +271,16 @@ wäre für diesen Fall verschwendete Mühe.
   Bankkonto, Abschreibungs-Journal-Entries) als Vorlage dienen. **Noch nicht gebaut - erst wenn
   der Nutzer live geht.**
 
+### Belegketten-Tiefe - Design-Entscheidung (mit Nutzer abgestimmt)
+Einfache Link-Felder (`wc_quotation`, `wc_sales_order`) reichen - **kein** Umbau auf ERPNexts
+native Positions-Verknüpfung (`Sales Invoice Item.sales_order`+Zeilen-ID, Connections-Tab,
+%-geliefert/fakturiert-Rollups). Das würde Artikel/Menge-Matching zwischen WeClapp-Auftrags- und
+-Rechnungspositionen brauchen - deutlich mehr Aufwand, für reine Nachvollziehbarkeit nicht nötig.
+**Rechnung → Gutschrift lässt sich nicht verknüpfen:** WeClapp liefert bei `CREDIT_NOTE`-Belegen
+keine Referenz auf die Ursprungsrechnung (weder am Kopf noch `salesInvoiceItemRelationship` an
+den Positionen, live geprüft an mehreren Belegen - immer leer). Keine Verknüpfung, kein Rate-Code.
+**Lieferschein → Auftrag:** analoges `wc_sales_order`-Link-Feld, sobald der Mapper existiert.
+
 ### Increment 13 (2026-09-10): Auftrags-Mapper + API-Update + Belegnamen ohne Präfix
 - `sync/mappers/sales_order.py` (`SalesOrderMapper`, registriert, 5/14): Dokumentname =
   WeClapp-`orderNumber` (**kein Präfix**), gleiche `_transaction`-Basis wie Angebot (Positionen,
