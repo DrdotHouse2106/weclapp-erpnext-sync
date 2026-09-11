@@ -417,6 +417,28 @@ Hier stattdessen **UI-gesteuert**:
 - **Layout:** `apply_custom_attribute_fields()` legt je Ziel-Doctype einen Reiter „WeClapp
   Zusatzfelder" an, darin je WeClapp-`groupName` eine Sektion (statt einer flachen Sammel-
   Sektion). `_raw_value` deckt jetzt DATE (`dateValue`) + DECIMAL-als-String ab.
+- **Nutzer-Fund 2026-09-11 (Artikel SK000034/SK000074): zwei Bugs, einer echt, einer keiner.**
+  1. **Echter Bug - Feld-Reihenfolge lief aus dem Tab:** `_layout()`s Anker für NEUE Gruppen/
+     Felder bei einem Folge-Lauf war `_last_field(doctype)` = das letzte Feld des GANZEN
+     Doctypes - nicht das letzte Feld INNERHALB unseres "WeClapp Zusatzfelder"-Tabs. Auf einer
+     Instanz mit weiteren Apps (hier: Shopware-/AI-Zusatzfelder auf Item, fremd) landete das
+     nach deren Feldern, außerhalb unseres Tabs - im Formular als zweiter, fälschlich
+     "Details" gelabelter Bereich sichtbar (Frappe gruppiert positionslose Folgefelder unter
+     den nächsten erreichbaren Tab-Kontext). **Fix: `apply_custom_attribute_fields()` jetzt
+     selbstheilend** - berechnet bei JEDEM Lauf die komplette Soll-Kette alle aktivierten
+     Felder (nicht nur neue) und kettet bestehende Felder bei Abweichung per
+     `frappe.db.set_value(..., "insert_after", ...)` um. Tab-Position selbst wird nie
+     angefasst (andere Apps könnten seither dahinter eingefügt haben). `res["repaired"]` im
+     Button-Ergebnistext.
+  2. **Kein Bug - "Steuer"-Tab leer ist Absicht:** Item Tax Template wird bewusst NICHT gesetzt
+     (Steuer läuft pro Belegzeile als "Actual", siehe Docstring in `article.py` + Vorgänger-
+     CLAUDE.md Punkt 5 "Item-Steuer-Template-Konflikt").
+  3. **Kein Bug - "leere Zusatzfelder" bei SK000074:** live geprüft, `Item.modified ==
+     Item.creation` (2026-09-09 19:50, der erste Artikel-Vollimport) - der Artikel wurde seit
+     Anlage der Zusatzfelder-Mapping-Einträge **nie erneut synct** (kein Delta-/Vollimport lief
+     seither über diesen Datensatz). WeClapp hat für ihn reichlich befüllte Attribute (u.a.
+     `4444` -> `artikelbeschreibung_francetec`, aktiviert). Braucht nur einen frischen
+     Artikel-Vollimport, kein Code-Fix.
 - **Offen am Zusatzfeld-Mapper:** Belegzeilen-Entities (`salesOrderItem` etc.) - Felder werden
   angelegt, aber `_transaction.build_lines` ruft `ca.resolve` noch nicht pro Position;
   `crmEvent` (kein Mapper); neue WeClapp-Auswahlwerte brauchen erneutes „Laden" + „Anlegen",

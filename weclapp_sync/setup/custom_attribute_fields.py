@@ -224,7 +224,11 @@ def _sync_ms_values(master: str, values: list[str]) -> None:
 def apply_custom_attribute_fields() -> dict:
 	"""Legt für alle aktivierten Mapping-Zeilen die fehlenden Custom Fields an (in Gruppen-
 	Sektionen unter einem Reiter „WeClapp Zusatzfelder"), MULTISELECT als „Table MultiSelect"
-	mit eigenem Werte-Doctype. Schreibt den Feld-Status zurück. Idempotent."""
+	mit eigenem Werte-Doctype. **Selbstheilend:** die komplette Soll-Kette (Tab -> je Gruppe
+	eine Sektion -> Felder) wird bei jedem Lauf neu berechnet und bereits vorhandene Felder bei
+	Abweichung umgekettet - so repariert ein erneuter Lauf auch verirrte `insert_after`-Ketten
+	aus früheren Versionen (die konnten Felder außerhalb unseres Tabs landen lassen, sichtbar
+	als zweiter "Details"-Bereich - Nutzer-Fund 2026-09-11). Schreibt den Feld-Status zurück."""
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 	settings = frappe.get_single("WeClapp Settings")
@@ -232,7 +236,7 @@ def apply_custom_attribute_fields() -> dict:
 	if not rows_all:
 		return {"created": 0, "enabled_rows": 0, "doctypes": []}
 
-	# je Doctype: {gruppe: [Feld-Definitionen]}
+	# je Doctype: {gruppe: [Feld-Definitionen]} - ALLE aktivierten Zeilen, nicht nur fehlende.
 	by_doctype: dict[str, dict[str, list[dict]]] = {}
 
 	for row in rows_all:
@@ -253,57 +257,84 @@ def apply_custom_attribute_fields() -> dict:
 
 		group = (row.wc_group or "").strip() or _NO_GROUP
 		for doctype in entity_doctypes(row.wc_entity):
-			if _has_field(doctype, fieldname):
-				continue
 			by_doctype.setdefault(doctype, {}).setdefault(group, []).append(
 				_field_def(row, fieldname, options)
 			)
 
 	created = 0
+	repaired = 0
 	for doctype, groups in by_doctype.items():
-		fields = _layout(doctype, groups)
-		if fields:
-			create_custom_fields({doctype: fields}, ignore_validate=True)
-			created += len(fields)
+		to_create, positions = _layout(doctype, groups)
+		if to_create:
+			create_custom_fields({doctype: to_create}, ignore_validate=True)
+			created += len(to_create)
+		for fieldname, insert_after in positions:
+			current = frappe.db.get_value("Custom Field", {"dt": doctype, "fieldname": fieldname}, "insert_after")
+			if current is not None and current != insert_after:
+				frappe.db.set_value(
+					"Custom Field", {"dt": doctype, "fieldname": fieldname}, "insert_after", insert_after,
+					update_modified=False,
+				)
+				repaired += 1
+
+	if created or repaired:
+		frappe.clear_cache()
 
 	# Feld-Status aller Zeilen aktualisieren
 	for row in rows_all:
 		row.field_status = _field_status(entity_doctypes(row.wc_entity), (row.target_fieldname or "").strip())
 	settings.flags.ignore_permissions = True
 	settings.save()
-	frappe.clear_cache()
 
 	enabled = sum(1 for r in rows_all if r.enabled)
-	return {"created": created, "enabled_rows": enabled, "doctypes": sorted(by_doctype)}
+	return {
+		"created": created,
+		"repaired": repaired,
+		"enabled_rows": enabled,
+		"doctypes": sorted(by_doctype),
+	}
 
 
-def _layout(doctype: str, groups: dict[str, list[dict]]) -> list[dict]:
-	"""Baut die Feldliste für `create_custom_fields`: ein Tab „WeClapp Zusatzfelder", darin je
-	WeClapp-Gruppe eine Sektion, dann die Felder. `insert_after` wird durchgekettet."""
-	out: list[dict] = []
-	anchor = _last_field(doctype)
+def _layout(doctype: str, groups: dict[str, list[dict]]) -> tuple[list[dict], list[tuple[str, str]]]:
+	"""Baut die vollständige Soll-Kette für diesen Doctype: Tab „WeClapp Zusatzfelder" -> je
+	WeClapp-Gruppe eine Sektion -> Felder, deterministisch sortiert. Läuft bei jedem Aufruf über
+	ALLE aktivierten Felder (nicht nur neue), damit sich eine frühere Fehlkettung selbst heilt.
+
+	Rückgabe: (neu anzulegende Feld-Definitionen, [(fieldname, Soll-insert_after), ...] für die
+	Umkettung bereits vorhandener Felder). Die Position des Tab Breaks selbst wird NIE
+	nachträglich verändert - andere Apps könnten seither eigene Felder dahinter eingefügt haben,
+	das wäre Fremdterrain."""
+	to_create: list[dict] = []
+	positions: list[tuple[str, str]] = []
 
 	if not _has_field(doctype, _TAB_FIELDNAME):
-		out.append(
-			{"fieldname": _TAB_FIELDNAME, "label": _TAB_LABEL, "fieldtype": "Tab Break", "insert_after": anchor}
+		to_create.append(
+			{
+				"fieldname": _TAB_FIELDNAME,
+				"label": _TAB_LABEL,
+				"fieldtype": "Tab Break",
+				"insert_after": _last_field(doctype),
+			}
 		)
-		anchor = _TAB_FIELDNAME
-	else:
-		anchor = _last_field(doctype)
 
+	anchor = _TAB_FIELDNAME
 	ordered = sorted(groups, key=lambda g: (g == _NO_GROUP, g.lower()))
 	for group in ordered:
 		sec = f"wc_zf_sec_{_slug(group)}"
 		if not _has_field(doctype, sec):
-			out.append(
+			to_create.append(
 				{"fieldname": sec, "label": group, "fieldtype": "Section Break", "insert_after": anchor}
 			)
+		positions.append((sec, anchor))
 		anchor = sec
 		for fd in groups[group]:
-			fd["insert_after"] = anchor
-			out.append(fd)
-			anchor = fd["fieldname"]
-	return out
+			fieldname = fd["fieldname"]
+			if not _has_field(doctype, fieldname):
+				fd["insert_after"] = anchor
+				to_create.append(fd)
+			positions.append((fieldname, anchor))
+			anchor = fieldname
+	return to_create, positions
 
 
 def _slug(text: str) -> str:

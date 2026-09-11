@@ -401,7 +401,8 @@ class WeClappSettings(Document):
 
 	@frappe.whitelist()
 	def apply_custom_attribute_fields(self):
-		"""Legt die Custom Fields für alle aktivierten Mapping-Zeilen an (idempotent)."""
+		"""Legt die Custom Fields für alle aktivierten Mapping-Zeilen an (idempotent,
+		selbstheilend - kettet auch schon vorhandene Felder bei Bedarf neu ein)."""
 		from weclapp_sync.setup import custom_attribute_fields as caf
 
 		res = caf.apply_custom_attribute_fields()
@@ -410,7 +411,8 @@ class WeClappSettings(Document):
 			return "Keine Zeile aktiviert – nichts angelegt."
 		doctypes = ", ".join(res["doctypes"]) or "–"
 		return (
-			f"{res['created']} Feld(er) angelegt/aktualisiert auf: {doctypes}. "
+			f"{res['created']} Feld(er) neu angelegt, {res.get('repaired', 0)} umgekettet "
+			f"(Reihenfolge repariert) auf: {doctypes}. "
 			f"{res['enabled_rows']} Zusatzfeld(er) sind für den Sync aktiv."
 		)
 
