@@ -248,6 +248,29 @@ item_defaults.default_supplier / Einkaufspreis), Artikelbilder.
   - 39 skip = `netAmount <= 0` (Anomalien), korrekt.
 - **2. Testlauf: 5287 ok, 0 fail, 39 skip.** **Rechnungs-Mapper fertig + verifiziert.**
 
+### Increment 18 (2026-09-11): CRM-Ereignisse + Lagerbewegungen
+- `sync/mappers/crm_event.py` (`CrmEventMapper`, registriert, 10/14): WeClapp `crmEvent` ->
+  `Communication`. Nur Telefonanrufe kommen in der echten Daten vor (`type` INCOMING_CALL/
+  OUTGOING_CALL, ~3895 Events); andere Typen übersprungen. `partyId` -> Customer/Supplier über
+  reinen DB-Lookup auf `wc_id` (live bestätigt: `party.id` == `Customer.wc_id`/`Supplier.wc_id`,
+  WeClapp `customer`/`supplier`/`party` teilen sich den id-Raum) - **kein** zusätzlicher
+  WeClapp-Aufruf pro Event nötig. Name `CRM-<id>`. Kein docstatus-Workflow (einmal angelegt,
+  Re-Runs überspringen - Anrufhistorie ändert sich nicht nachträglich).
+- `sync/mappers/stock_movement.py` (`StockMovementMapper`, registriert, 11/14): WeClapp
+  `warehouseStockMovement` -> `Stock Entry`. **Bleibt IMMER Entwurf**, anders als der Vorgänger
+  (der hat damit einmalig real den ERPNext-Lagerbestand nachgebaut - der einzige Schritt dort,
+  der das tat). Für den laufenden Sync zu riskant, solange der Lagerbestand-Aufbau nicht separat
+  geklärt ist - ein 1:1-Nachbau bleibt ein bewusster, einmaliger Extra-Schritt (gezieltes
+  Submitten), nicht Teil des Syncs. `articleId` -> `Item.wc_id` (DB-Lookup), `storagePlaceId` ->
+  `storagePlace.warehouseId` -> `warehouse.name` -> `h.ensure_warehouse()` (zwei kleine, einmalig
+  pro Lauf gecachte WeClapp-Listen: `storagePlace` ~1350, `warehouse` <20). Name `LB-<id>`.
+  WeClapp: 15939 Lagerbewegungen.
+- Damit **11 von 14** Objekttypen registriert. Bewusst weiter unregistriert (siehe Increment 15):
+  `sales_payment`/`purchase_payment` (Zahlungsabgleich - erst für Live-Betrieb). `article_price`
+  bleibt ebenfalls unregistriert, weil bereits vollständig `article._sync_prices()` mit erledigt
+  (WeClapp liefert `articlePrices` eingebettet im `article`-Payload, keine eigene Abfrage nötig).
+- **Noch nicht getestet.**
+
 ### Increment 17 (2026-09-11): Einkaufsseite (Bestellung + Eingangsrechnung)
 - `sync/mappers/purchase_order.py` (`PurchaseOrderMapper`, registriert, 8/14): spiegelbildlich
   zu `sales_order.py` - `_transaction`-Basis mit `is_selling=False` (`expense_account`,

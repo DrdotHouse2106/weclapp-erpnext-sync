@@ -131,6 +131,28 @@ register(
 
 register(
 	ObjectTypeSpec(
+		key="crm_event",
+		label="CRM-Ereignisse",
+		weclapp_doctype=WeClappDocType.CRM_EVENT,
+		target_doctype="Communication",
+		mapper_path="weclapp_sync.sync.mappers.crm_event:CrmEventMapper",
+		depends_on=("customer", "supplier"),
+	)
+)
+
+register(
+	ObjectTypeSpec(
+		key="stock_movement",
+		label="Lagerbewegungen",
+		weclapp_doctype=WeClappDocType.WAREHOUSE_STOCK_MOVEMENT,
+		target_doctype="Stock Entry",
+		mapper_path="weclapp_sync.sync.mappers.stock_movement:StockMovementMapper",
+		depends_on=("article",),
+	)
+)
+
+register(
+	ObjectTypeSpec(
 		key="quotation",
 		label="Angebote",
 		weclapp_doctype=WeClappDocType.QUOTATION,
