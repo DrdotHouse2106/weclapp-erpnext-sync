@@ -34,6 +34,21 @@ Field + Client Script, Tax Rules/Categories) - **Custom Field + Client Script** 
   dann eine Testposition manuell in einem neuen Angebot erfassen und prüfen, ob der Steuersatz
   vorgeschlagen wird).
 
+### Nachtrag 2026-09-12: stock_movement scheiterte massenhaft ("Bewertungssatz erforderlich")
+`WC-SYNC-00032` (der oben genannte, ungewollt parallel gestartete Delta-Sync) hat beim gerade
+erst aktivierten `stock_movement` **9110 von 15944 Fehlschlägen** produziert (6834 ok). Per
+Read-Only-Blick ins WeClapp Sync Log: `frappe.exceptions.ValidationError: Der Bewertungssatz für
+den Posten ... ist erforderlich` aus `stock_entry.py` `calculate_rate_and_amount()` ->
+`get_valuation_rate()`. **Ursache:** ERPNext berechnet Zeilenbeträge eines Stock Entry auch im
+Entwurf (`validate()` läuft bei jedem `.insert()`/`.save()`, nicht erst beim Submit) und verlangt
+dafür bei Warenausgängen (`s_warehouse` gesetzt) einen Bewertungssatz. Da dieser Mapper bewusst
+NIE submitted (siehe Moduldocstring), gab es für viele Artikel nie eine echte Lagerbewertung.
+**Fix:** `item["allow_zero_valuation_rate"] = 1` auf jeder Stock-Entry-Zeile - unbedenklich, weil
+diese Entwürfe ohnehin nie eine echte GL-/Lagerbuchung auslösen (das reale, einmalige
+1:1-Nachbauen des Lagerbestands per gezieltem Submit bleibt ein bewusster Folge-Schritt, siehe
+Increment 18). **Nach dem nächsten Sync-Lauf sollten die 9110 Fehlschläge behoben sein**, bisher
+nicht erneut getestet.
+
 ### Nachtrag 2026-09-12: Scheduler enqueued Delta-Sync parallel zu laufendem Vollimport
 Nutzer meldete: `WC-SYNC-00031` (Vollimport) blieb trotz `abort_requested=1` auf
 `purchase_order`/`purchase_invoice` stehen. Per Read-Only-Check direkt gegen die Instanz

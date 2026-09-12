@@ -95,7 +95,14 @@ class StockMovementMapper(Mapper):
 		)
 		uom = frappe.db.get_value("Item", item_code, "stock_uom") or h.default_uom()
 
-		item = {"item_code": item_code, "qty": qty, "uom": uom}
+		# allow_zero_valuation_rate: dieser Mapper bleibt IMMER Entwurf (siehe Moduldocstring) -
+		# ERPNext berechnet Zeilenbeträge aber auch bei Entwürfen (validate() ->
+		# calculate_rate_and_amount()) und verlangt dafür bei Warenausgängen einen
+		# Bewertungssatz. Ohne echte Lagerhistorie (kein Dokument hier wird je submitted) haben
+		# viele Artikel nie einen bekommen -> ohne dieses Flag scheitert das insert() mit
+		# "Bewertungssatz ... ist erforderlich" (live: 9110/15944 Fehlschläge). Unbedenklich, da
+		# die Entwürfe nie eine echte GL-/Lagerbuchung auslösen.
+		item = {"item_code": item_code, "qty": qty, "uom": uom, "allow_zero_valuation_rate": 1}
 		if is_receipt:
 			item["t_warehouse"] = warehouse
 			valuation_price = record.get("valuationPrice")
