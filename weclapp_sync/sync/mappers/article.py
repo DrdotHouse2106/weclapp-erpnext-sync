@@ -43,6 +43,19 @@ Verkaufssinn - keine Fertigungs-Stückliste, kein Lagerabgang der Komponenten): 
 seinen Bestandteilen "explodiert" - keine eigene Buchung). Komponenten über `resolve_line_item()`
 aufgelöst (Stub-Anlage, falls eine Komponente in der Iterationsreihenfolge des Artikel-Vollimports
 noch nicht drankam - wie bei Belegzeilen, ein späterer Durchlauf/Re-Run vervollständigt sie).
+
+**Artikelbilder** (`articleImages`, im Artikel-Payload eingebettet): `_attachments.
+attach_article_images()` lädt jedes Bild einzeln über die artikel-eigene WeClapp-Aktion
+`downloadArticleImage` (live ermittelt - die generische `document`-Entität kennt Artikelbilder
+NICHT) und hängt es als Frappe-File ans Item; das `mainImage` wird zusätzlich `Item.image`.
+Idempotent über den WeClapp-Dateinamen (kein erneuter Download bei Re-Runs).
+
+**`procurementLeadDays`/`averageDeliveryTime`**: ersteres -> ERPNexts natives `lead_time_days`
+(kein Zusatzfeld, keine Kollisionsgefahr). Für `averageDeliveryTime` gibt es kein natives
+Pendant - mit der `ecommerce_integrations`-App (Shopware-Anbindung) abgestimmt (2026-09-12,
+Cross-Session): eigenes Feld `wc_average_delivery_time` (Int), das deren `delivery_time`-Feld
+NICHT anfasst (die App liest unseres nur als Fallback, wenn ihr eigenes leer ist - kein
+Schreib-Wettlauf zwischen den beiden Apps).
 """
 
 from __future__ import annotations
@@ -52,6 +65,7 @@ from typing import Any
 import frappe
 from frappe.utils import add_days
 
+from weclapp_sync.sync.mappers._attachments import attach_article_images
 from weclapp_sync.sync.mappers._transaction import _line_title, resolve_line_item
 
 from weclapp_sync import erpnext_helpers as h
@@ -106,6 +120,13 @@ class ArticleMapper(Mapper):
 			"taxes": [],
 			# Rein informativ, siehe Moduldocstring 2026-09-12 - beeinflusst den Sync nicht.
 			"custom_default_item_tax_template": self._default_item_tax_template(record),
+			# procurementLeadDays -> ERPNexts eigenes natives Feld (kein Zusatzfeld nötig, keine
+			# Kollisionsgefahr mit anderen Apps). averageDeliveryTime -> eigenes wc_-Feld, siehe
+			# custom_fields.py - mit ecommerce_integrations abgestimmt (2026-09-12): die App
+			# nutzt es als reinen Read-Only-Fallback für ihr eigenes `delivery_time`-Feld,
+			# schreibt aber selbst nie hinein.
+			"lead_time_days": record.get("procurementLeadDays") or 0,
+			"wc_average_delivery_time": record.get("averageDeliveryTime") or None,
 		}
 		# description/item_group nur bei Neuanlage - können später von anderen Integrationen
 		# (Shopware) mitgepflegt werden (siehe reference article_migration.py).
@@ -157,6 +178,7 @@ class ArticleMapper(Mapper):
 			return None
 		self._sync_prices(name, record)
 		self._sync_product_bundle(name, record)
+		attach_article_images(self.client, record, name)
 		return name
 
 	def _sync_product_bundle(self, item_code: str, record: dict) -> None:

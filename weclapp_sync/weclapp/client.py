@@ -265,6 +265,27 @@ class WeClappClient:
 		except requests.RequestException as e:
 			raise WeClappApiError(f"Download von document/{document_id} fehlgeschlagen: {e}", url=url) from e
 
+	def iter_article_image_content(
+		self, article_id: str, image_id: str, *, chunk_size: int = 1 << 16
+	) -> Iterator[bytes]:
+		"""Generator über den Binärinhalt eines WeClapp-Artikelbildes - streamend, wie
+		`iter_document_content()`. **Eigene Aktion, nicht die generische `document`-Entität** -
+		`document?entityName=article&entityId=...` liefert für Artikelbilder nichts (live per GET
+		verifiziert). Der richtige, ebenfalls rein lesende Endpunkt ist
+		`article/id/{articleId}/downloadArticleImage?articleImageId={imageId}` (live getestet,
+		200 mit dem tatsächlichen Bildinhalt)."""
+		url = self.base_url + f"article/id/{article_id}/downloadArticleImage"
+		try:
+			with self.session.get(
+				url, params={"articleImageId": image_id}, stream=True, timeout=_TIMEOUT
+			) as resp:
+				resp.raise_for_status()
+				yield from resp.iter_content(chunk_size=chunk_size)
+		except requests.RequestException as e:
+			raise WeClappApiError(
+				f"Bild-Download von article/{article_id}/downloadArticleImage fehlgeschlagen: {e}", url=url
+			) from e
+
 	# ------------------------------------------------------------------ Helfer
 	@staticmethod
 	def modified_since_filter(epoch_ms: int | None) -> dict[str, Any]:

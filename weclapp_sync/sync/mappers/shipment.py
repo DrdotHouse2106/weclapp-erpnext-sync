@@ -27,9 +27,11 @@ import frappe
 
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.sync.mappers import _custom_attributes as ca
+from weclapp_sync.sync.mappers._attachments import attach_weclapp_documents
 from weclapp_sync.sync.mappers._transaction import TransactionMapper, _line_title, resolve_line_item
 from weclapp_sync.sync.mappers.base import Mapper
 from weclapp_sync.sync.settings import get_settings
+from weclapp_sync.weclapp import WeClappDocType
 
 
 def _match_customer_address(customer_name: str | None, addr: dict) -> str | None:
@@ -172,4 +174,5 @@ class ShipmentMapper(Mapper):
 			doc.insert(set_name=name)
 
 		# Bewusst KEIN doc.submit() hier - siehe Modul-Docstring.
+		attach_weclapp_documents(self.client, WeClappDocType.SHIPMENT, record.get("id"), "Delivery Note", doc.name)
 		return doc.name

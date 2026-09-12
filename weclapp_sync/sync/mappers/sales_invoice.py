@@ -21,8 +21,10 @@ import frappe
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.setup import masters
 from weclapp_sync.sync.mappers import _custom_attributes as ca
+from weclapp_sync.sync.mappers._attachments import attach_weclapp_documents
 from weclapp_sync.sync.mappers._transaction import TransactionMapper
 from weclapp_sync.sync.settings import get_settings
+from weclapp_sync.weclapp import WeClappDocType
 
 
 class SalesInvoiceMapper(TransactionMapper):
@@ -136,4 +138,5 @@ class SalesInvoiceMapper(TransactionMapper):
 		if settings.submit_documents and doc.docstatus == 0:
 			doc.submit()
 
+		attach_weclapp_documents(self.client, WeClappDocType.SALES_INVOICE, record.get("id"), "Sales Invoice", doc.name)
 		return doc.name

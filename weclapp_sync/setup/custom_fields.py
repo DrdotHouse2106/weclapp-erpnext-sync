@@ -321,6 +321,28 @@ def _item_tax_hint_fields() -> dict[str, list[dict]]:
 	}
 
 
+def _item_delivery_time_field() -> dict[str, list[dict]]:
+	"""`averageDeliveryTime` (WeClapp) hat kein natives ERPNext-Pendant. Mit der
+	`ecommerce_integrations`-App (Shopware-Anbindung) abgestimmt (2026-09-12, Cross-Session-
+	Absprache): eigenes Feld statt deren `delivery_time` - die App liest dieses hier nur als
+	Read-Only-Fallback, wenn ihr eigenes Feld leer ist. Kein Schreib-Wettlauf zwischen den Apps."""
+	return {
+		"Item": [
+			{
+				"fieldname": "wc_average_delivery_time",
+				"label": "Durchschnittliche Lieferzeit in Tagen (WeClapp)",
+				"fieldtype": "Int",
+				"insert_after": "lead_time_days",
+				"description": (
+					"Aus WeClapp `averageDeliveryTime`. Wird von der Shopware-Anbindung "
+					"(ecommerce_integrations) als Fallback gelesen, wenn deren eigenes "
+					"Lieferzeit-Feld leer ist - kein Schreibzugriff unsererseits auf deren Feld."
+				),
+			}
+		]
+	}
+
+
 def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 	out: dict[str, list[dict]] = {}
 	for part in parts:
@@ -333,7 +355,12 @@ def apply_custom_fields() -> None:
 	"""Idempotent - create_custom_fields aktualisiert vorhandene Felder statt zu doppeln."""
 	create_custom_fields(
 		_merge(
-			_wc_id_fields(), _extra_fields(), _doc_email_fields(), _doc_link_fields(), _item_tax_hint_fields()
+			_wc_id_fields(),
+			_extra_fields(),
+			_doc_email_fields(),
+			_doc_link_fields(),
+			_item_tax_hint_fields(),
+			_item_delivery_time_field(),
 		),
 		ignore_validate=True,
 	)

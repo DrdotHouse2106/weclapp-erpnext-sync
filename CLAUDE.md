@@ -69,6 +69,49 @@ beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffe
 gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
 Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
 
+### Nachtrag 2026-09-12: Artikelbilder, Beleg-PDFs, Lieferzeit-Felder (Cross-Session-Absprache)
+Nutzer-Fragen: (1) Wiederbeschaffungstage/Durchschnittliche Lieferzeit aus WeClapp gesynct? (2)
+Bilder bei Artikeln, Dokumente (PDFs) bei Belegen? (3) Für die Lieferzeit ein gemeinsames Feld
+mit der `ecommerce_integrations`-App (Shopware-Anbindung, läuft als eigene Claude-Session)
+aushandeln, statt getrennter Felder.
+
+**procurementLeadDays/averageDeliveryTime:** ersteres -> ERPNexts natives `lead_time_days`
+(kein Zusatzfeld nötig). Für `averageDeliveryTime` gibt's kein natives Pendant - **Cross-Session-
+Absprache mit `ecommerce-integrations-9d`**: die Shopware-App wollte ihr eigenes `delivery_time`
+NICHT von uns mitbenutzt haben (Begründung: bestehende Semantik "leer = Shopware-Standard-
+Lieferzeit greift" auf schon produktiven Installationen, sonst Schreib-Wettlauf mit ihrem
+eigenen Shopware-Sync). Einigung: eigenes Feld **`wc_average_delivery_time`** (Int, Tage) - die
+Shopware-App liest es nur als Read-Only-Fallback, wenn ihr `delivery_time` leer ist (`order_
+mapper.calculate_delivery_date` hat dafür laut ihrer Aussage schon ein Fallback-Präzedenzfall:
+`delivery_time` -> `lead_time_days`). Kein Schreibzugriff unsererseits auf ihr Feld.
+
+**Artikelbilder** (`articleImages`, im Artikel-Payload eingebettet - kein Extra-WeClapp-Aufruf):
+war komplett ungebaut. **Download-Endpunkt live ermittelt** (WeClapp dokumentiert das nicht
+offensichtlich über die generische `document`-Entität - `document?entityName=article&entityId=
+...` liefert leer): die artikel-eigene Aktion `article/id/{articleId}/downloadArticleImage?
+articleImageId={imageId}` (GET, 200 mit Bildinhalt, live verifiziert). Neue Client-Methode
+`iter_article_image_content()` (streamend wie `iter_document_content()`). Neues Modul
+`sync/mappers/_attachments.py`: `attach_article_images()` lädt jedes Bild einzeln und hängt es
+als Frappe-File ans Item (`mainImage` zusätzlich als `Item.image`), idempotent über den WeClapp-
+Dateinamen (kein erneuter Download bei Re-Runs). Aus `article.py` `upsert()` aufgerufen.
+
+**Beleg-PDFs** (`document`-Entität, `entityName=<weclapp_doctype>&entityId=<id>`, live gegen
+`salesInvoice` verifiziert - liefert Metadaten inkl. eines zusammengesetzten `id`-Strings wie
+`"salesInvoice.2005691.2005698"`, der 1:1 an `document/id/{id}/download` geht). Die Client-
+Methoden `get_documents()`/`iter_document_content()` gab es dafür schon seit Increment 1, waren
+aber nie verdrahtet. `_attachments.attach_weclapp_documents()` jetzt aus `quotation.py`,
+`sales_order.py`, `sales_invoice.py`, `shipment.py`, `purchase_order.py`, `purchase_invoice.py`
+aufgerufen (jeweils kurz vor `return doc.name`) - hängt alle an den WeClapp-Beleg gehängten
+Dateien (i.d.R. das ausgestellte PDF) idempotent (Dateiname-Abgleich) ans ERPNext-Dokument.
+
+**Speicher-Prinzip gewahrt:** beide Funktionen laden nie mehr als EINE Datei gleichzeitig in den
+Speicher (der WeClapp-Client streamt chunkweise, `b"".join(...)` sammelt genau diese eine Datei,
+keine Vorab-Cache-Ordner wie im Vorgänger-Importer, siehe dessen `WC_CACHE_IMAGES_BASE`/
+`WC_CACHE_DOCUMENTS_BASE` - dafür brauchte es dort einen separaten Cache-Lauf vor der eigentlichen
+Migration).
+**Noch nicht gegen die Live-Instanz getestet** (Custom Field + Client Script/Attachments nach
+Redeploy prüfen).
+
 ### Nachtrag 2026-09-12: Set-/Bundle-Artikel (WeClapp "Stückliste") -> ERPNext Product Bundle
 Nutzer-Fund: Artikel SK000076 (`articleType == "SALES_BILL_OF_MATERIAL"`, WeClapp nennt das im
 UI "Stückliste" - eine reine Verkaufs-Bündelung, KEINE Fertigungs-Stückliste, keine eigene
