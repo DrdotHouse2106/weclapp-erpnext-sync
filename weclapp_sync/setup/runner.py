@@ -50,6 +50,19 @@ def run_setup(*, full: bool = False) -> None:
 			title="WeClapp Setup: apply_custom_attribute_fields", message=frappe.get_traceback()
 		)
 
+	# Immer: Client Scripts für den Item-Steuersatz-Vorschlag bei manueller Belegerfassung
+	# (siehe item_tax_hint.py - Lösung für den Item-Steuer-Template-Konflikt).
+	try:
+		from weclapp_sync.setup.item_tax_hint import apply_item_tax_hint_client_scripts
+
+		apply_item_tax_hint_client_scripts()
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(
+			title="WeClapp Setup: apply_item_tax_hint_client_scripts", message=frappe.get_traceback()
+		)
+
 	if full:
 		for step in (masters.setup_uom_settings, masters.setup_payment_terms, masters.setup_fiscal_years):
 			try:

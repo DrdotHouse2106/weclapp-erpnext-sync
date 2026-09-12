@@ -3,6 +3,54 @@
 Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
 (Konvention aus dem Ursprungsprojekt, siehe unten).
 
+### Increment 19 (2026-09-12): Item-Steuer-Template-Konflikt sauber gelöst
+Offenes Problem aus Increment 12 (siehe dort: "Die Steuern sind aber immernoch nicht gesetzt"):
+wie schlägt ERPNext künftigen, von Hand erfassten Belegen (nach Live-Umstellung) einen
+Steuersatz vor, ohne den permanenten Konflikt mit den Actual-Steuerzeilen des Syncs zu
+reproduzieren (natives `Item.taxes` -> `validate_item_wise_tax_detail` lehnt Belege ab, deren
+Artikel historisch zu einem anderen Satz verkauft wurde)? Nutzer hat extern recherchierte
+Lösungsoptionen eingebracht (Monkey-Patch der Core-Validierung, `valid_from`-Datierung, Custom
+Field + Client Script, Tax Rules/Categories) - **Custom Field + Client Script** umgesetzt:
+- **Neues Custom Field `Item.custom_default_item_tax_template`** (Link Item Tax Template,
+  `setup/custom_fields.py` `_item_tax_hint_fields()`) - rein informativ, fließt in KEINE
+  ERPNext-Steuerberechnung/-Validierung ein. Wird von `article.py`
+  `_default_item_tax_template()` aus `taxRateType` befüllt (derselbe `_TAX_RATE_TEMPLATES`-
+  Mapping wie der zurückgerollte Versuch, aber auf das getrennte Feld statt auf `Item.taxes`).
+- **Neues Modul `setup/item_tax_hint.py`**: legt je Beleg-Doctype mit Steuerbezug (Quotation,
+  Sales Order, Sales Invoice, Purchase Order, Purchase Invoice) ein **Client Script** an, das
+  beim manuellen Anlegen einer Position im Browser (`item_code`-Change-Event auf der jeweiligen
+  Item-Kindtabelle) das Custom Field vom Artikel liest und NUR in die neue Zeile als
+  `item_tax_template` einträgt (überschreibt nichts Vorhandenes). Idempotent über
+  `frappe.db.get_value("Client Script", {"dt":..., "script": ["like", "%custom_default_item_tax_template%"]})`
+  gesucht/aktualisiert - Client Script hat Hash-Naming, kein deterministischer `name` möglich
+  (analog zum Property-Setter-Abgleich in `naming.py`). Läuft in `setup/runner.py` `run_setup()`
+  (immer, wie die anderen Setup-Schritte).
+- **Warum das den Sync nicht berührt:** ein Client Script läuft ausschließlich im Browser: der
+  Sync (Python, `frappe.new_doc(...).insert()`/`.save()`) triggert es nie. Die Trennung
+  natives Feld (leer, für den Sync) vs. Custom Field (befüllt, nur für die UI) ist von
+  Konstruktion her ohne jede Rückwirkung auf importierte/synctierte Belege - kein Monkey-Patch
+  der ERPNext-Core-Validierung nötig, kein Wartungsrisiko bei Updates.
+- **Noch nicht gegen die Live-Instanz getestet** (Custom Field + Client Script anlegen lassen,
+  dann eine Testposition manuell in einem neuen Angebot erfassen und prüfen, ob der Steuersatz
+  vorgeschlagen wird).
+
+### Nachtrag 2026-09-12: doppeltes "Details" war ein GANZ ANDERER Bug (`wc_sync_section`)
+Nutzer meldete den doppelten "Details"-Bereich erneut, obwohl der Zusatzfelder-Tab-Fix
+(Increment 12, Commit 319a9f7) stand. **Per Live-GET verifiziert**
+(`frappe.desk.form.load.getdoctype?doctype=Item`, read-only): `wc_zusatzfelder_tab` sitzt
+korrekt bei idx 164 (direkt nach "Connections", wie erwartet) - der Zusatzfelder-Fix war also
+tatsächlich in Ordnung. Der **echte, andere** Übeltäter: `wc_sync_section`
+(`setup/custom_fields.py` `_wc_id_fields()`) hatte von Anfang an **gar kein** `insert_after` -
+saß dadurch bei **idx 1**, VOR dem echten "Details"-Tab (idx 4). Frappe umhüllt Felder vor dem
+ersten Tab Break mit einem impliziten, standardmäßig ebenfalls "Details" gelabelten Tab -> exakt
+der doppelte "Details"-Bereich. Betraf **alle 15 `_WC_ID_DOCTYPES`**, nicht nur Item.
+**Fix:** `_last_foreign_field(doctype)` berechnet jetzt live einen echten Anker (letztes Feld,
+das NICHT selbst Teil der `wc_sync_section`/`wc_id`/`wc_last_modified`-Kette ist - sonst
+Ringschluss bei der Neupositionierung). Läuft bei JEDEM `apply_custom_fields()`-Lauf (nicht nur
+einmalig), dieselbe bereits verifizierte `.save()`-basierte Idx-Neuberechnung wie beim
+Zusatzfelder-Tab-Fix repositioniert damit auch die bereits falsch stehenden Bestandsfelder aller
+15 Doctypes automatisch beim nächsten `run_setup()` (kein manueller Nacharbeitsschritt nötig).
+
 ## Stand der Umsetzung (2026-09-08)
 
 **Increment 1 + 2 fertig: App-Gerüst + Unterbau + Setup-Layer + erster (reduzierter)

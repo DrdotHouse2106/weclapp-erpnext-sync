@@ -18,15 +18,23 @@ Noch NICHT portiert (Folge-Schritt):
   - `articleSupplySource` hat 87k Einträge, muss pro Artikel gefiltert nachgeladen werden.
 - Artikelbilder (WeClapp-Cache, hier nicht vorhanden)
 
-Item Tax Template: bewusst NICHT gesetzt (`taxes` wird explizit leer geschrieben). Steuer wird
-pro Belegzeile exakt aus WeClapp als "Actual"-Zeile gebucht, unabhängig vom Artikel-Default.
-**2026-09-11: kurzzeitig aus `taxRateType` gesetzt (für künftige, von Hand angelegte Belege nach
-Live-Umstellung), aber SOFORT zurückgerollt** - reproduziert exakt den vom Vorgänger
-dokumentierten "Item-Steuer-Template-Konflikt": ERPNext vergleicht bei jedem Speichern den vom
-Template erwarteten Steuerbetrag mit unseren Actual-Zeilen und lehnt jeden Beleg ab, dessen
-Artikel historisch zu einem anderen Satz verkauft wurde (46 Angebote + 506 Aufträge live
-gescheitert). `_item_tax_rows()`/`_TAX_RATE_TEMPLATES` bleiben unten als fertiger Baustein für
-einen SEPARATEN, einmaligen Schritt kurz vor der Live-Umstellung (nicht Teil des laufenden Syncs).
+Item Tax Template: das NATIVE `Item.taxes` bleibt bewusst IMMER leer (explizit `[]`
+geschrieben). Steuer wird pro Belegzeile exakt aus WeClapp als "Actual"-Zeile gebucht,
+unabhängig vom Artikel-Default.
+**2026-09-11: kurzzeitig aus `taxRateType` in `Item.taxes` gesetzt (für künftige, von Hand
+angelegte Belege nach Live-Umstellung), aber SOFORT zurückgerollt** - reproduziert exakt den vom
+Vorgänger dokumentierten "Item-Steuer-Template-Konflikt": ERPNext vergleicht bei jedem Speichern
+den vom Template erwarteten Steuerbetrag mit unseren Actual-Zeilen und lehnt jeden Beleg ab,
+dessen Artikel historisch zu einem anderen Satz verkauft wurde (46 Angebote + 506 Aufträge live
+gescheitert). Das ist KEIN migrationsspezifisches Problem, sondern dauerhaft (das
+Actual-Zeilen-Buchen bleibt permanent), daher auch keine "erst nach Live-Umstellung wieder
+gesetzt"-Lösung möglich.
+**2026-09-12: sauber gelöst über ein GETRENNTES, rein informatives Custom Field**
+(`custom_default_item_tax_template`, siehe setup/custom_fields.py) statt des nativen
+`Item.taxes`. `_default_item_tax_template()` befüllt nur dieses Feld aus `taxRateType`. Ein
+Client Script (`setup/item_tax_hint.py`) liest es beim manuellen Anlegen einer Belegzeile im
+Browser aus und schlägt den Zeilen-Steuersatz vor. Der Sync selbst läuft serverseitig in Python
+und triggert nie ein Client Script - importierte/synctierte Belege bleiben unberührt.
 """
 
 from __future__ import annotations
@@ -86,6 +94,8 @@ class ArticleMapper(Mapper):
 			# Ohne das explizite [] bliebe ein einmal gesetztes Template stehen, weil ein
 			# fehlender Dict-Key beim Sync die bestehende Kindtabelle nicht anfasst.
 			"taxes": [],
+			# Rein informativ, siehe Moduldocstring 2026-09-12 - beeinflusst den Sync nicht.
+			"custom_default_item_tax_template": self._default_item_tax_template(record),
 		}
 		# description/item_group nur bei Neuanlage - können später von anderen Integrationen
 		# (Shopware) mitgepflegt werden (siehe reference article_migration.py).
@@ -101,18 +111,16 @@ class ArticleMapper(Mapper):
 	_TAX_RATE_TEMPLATES = {"STANDARD": "19 %", "REDUCED": "7 %"}
 
 	@classmethod
-	def _item_tax_rows(cls, record: dict) -> list[dict]:
-		"""**Aktuell NICHT aufgerufen** (siehe Moduldocstring - Regression 2026-09-11). Fertiger
-		Baustein für einen separaten, einmaligen Schritt kurz vor der Live-Umstellung, nicht für
-		den laufenden Sync (kollidiert dort mit den Actual-Steuerzeilen migrierter Belege)."""
+	def _default_item_tax_template(cls, record: dict) -> str | None:
+		"""Nur ein UI-Vorschlag (Custom Field `custom_default_item_tax_template`, siehe
+		setup/custom_fields.py + setup/item_tax_hint.py) für künftige, von Hand angelegte Belege -
+		NICHT das native `Item.taxes`, das für den Sync leer bleiben muss (siehe Moduldocstring)."""
 		base = cls._TAX_RATE_TEMPLATES.get(record.get("taxRateType"))
 		if not base:
-			return []
+			return None
 		abbr = h.company_abbr()
 		name = f"{base} - {abbr}" if abbr else base
-		if not frappe.db.exists("Item Tax Template", name):
-			return []
-		return [{"item_tax_template": name}]
+		return name if frappe.db.exists("Item Tax Template", name) else None
 
 	@staticmethod
 	def _barcodes(record: dict) -> list[dict]:

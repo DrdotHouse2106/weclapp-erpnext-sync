@@ -9,6 +9,7 @@ idempotent nachzieht - siehe weclapp_sync/setup/runner.py.
 
 from __future__ import annotations
 
+import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 # Zieltypen, die einen WeClapp-Herkunftsnachweis bekommen.
@@ -30,17 +31,41 @@ _WC_ID_DOCTYPES = [
 	"Communication",
 ]
 
+# Eigene Feldnamen dieser Kette - beim Anker-Suchen ausschließen, sonst Ringschluss (die Sektion
+# würde sich selbst oder ihr eigenes Folgefeld als insert_after bekommen).
+_WC_SYNC_FIELDNAMES = {"wc_sync_section", "wc_id", "wc_last_modified"}
+
+
+def _last_foreign_field(doctype: str) -> str:
+	"""Letztes Feld des Doctypes, das NICHT selbst Teil unserer 'WeClapp Sync'-Kette ist.
+
+	**Bugfix 2026-09-12:** `wc_sync_section` hatte bisher GAR KEIN `insert_after` - ein Custom
+	Field ohne `insert_after` landet bei Frappe an Position `idx=1` (ganz am Anfang, VOR dem
+	echten "Details"-Tab). Frappe umhüllt Felder vor dem ersten Tab Break mit einem impliziten,
+	standardmäßig ebenfalls "Details" gelabelten Tab -> genau der vom Nutzer gemeldete doppelte
+	"Details"-Bereich (live per GET gegen `frappe.desk.form.load.getdoctype` bestätigt: Item hatte
+	`wc_sync_section` bei idx 1, den echten "Details"-Tab erst bei idx 4). Jetzt wird immer ein
+	echter Anker berechnet (letztes Fremd-Feld, live neu ermittelt) - dieselbe
+	`.save()`-basierte Idx-Neuberechnung wie beim Zusatzfelder-Tab-Fix (Increment 12) repositioniert
+	damit auch schon bestehende, falsch stehende `wc_sync_section`-Felder korrekt ans Ende."""
+	fields = [f.fieldname for f in frappe.get_meta(doctype).fields if f.fieldname not in _WC_SYNC_FIELDNAMES]
+	return fields[-1] if fields else ""
+
 
 def _wc_id_fields() -> dict[str, list[dict]]:
 	fields: dict[str, list[dict]] = {}
 	for dt in _WC_ID_DOCTYPES:
+		section: dict = {
+			"fieldname": "wc_sync_section",
+			"label": "WeClapp Sync",
+			"fieldtype": "Section Break",
+			"collapsible": 1,
+		}
+		anchor = _last_foreign_field(dt)
+		if anchor:
+			section["insert_after"] = anchor
 		fields[dt] = [
-			{
-				"fieldname": "wc_sync_section",
-				"label": "WeClapp Sync",
-				"fieldtype": "Section Break",
-				"collapsible": 1,
-			},
+			section,
 			{
 				"fieldname": "wc_id",
 				"label": "WeClapp ID",
@@ -269,6 +294,33 @@ def _doc_link_fields() -> dict[str, list[dict]]:
 	}
 
 
+def _item_tax_hint_fields() -> dict[str, list[dict]]:
+	"""Rein informatives Feld für künftige, von Hand angelegte Belege (nach Live-Umstellung).
+
+	Bewusst GETRENNT vom nativen `Item.taxes` (Item Tax Template), das der Artikel-Mapper
+	explizit leer hält (siehe mappers/article.py - Item-Steuer-Template-Konflikt). Dieses Feld
+	hier fließt in KEINE ERPNext-Steuerberechnung/Validierung ein, sondern wird nur von einem
+	Client Script gelesen (setup/item_tax_hint.py), das beim manuellen Anlegen einer Belegzeile
+	im Browser den Zeilen-Steuersatz vorschlägt. Der Sync selbst läuft rein serverseitig in
+	Python und triggert nie ein Client Script - für importierte/synctierte Belege ändert sich
+	dadurch nichts."""
+	return {
+		"Item": [
+			{
+				"fieldname": "custom_default_item_tax_template",
+				"label": "Standard-Steuersatz (WeClapp, nur Vorschlag)",
+				"fieldtype": "Link",
+				"options": "Item Tax Template",
+				"insert_after": "taxes",
+				"description": (
+					"Nur ein Vorschlag für manuell im Browser angelegte Belegzeilen "
+					"(Client Script). Beeinflusst den Sync und bereits importierte Belege nicht."
+				),
+			}
+		]
+	}
+
+
 def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 	out: dict[str, list[dict]] = {}
 	for part in parts:
@@ -280,6 +332,8 @@ def _merge(*parts: dict[str, list[dict]]) -> dict[str, list[dict]]:
 def apply_custom_fields() -> None:
 	"""Idempotent - create_custom_fields aktualisiert vorhandene Felder statt zu doppeln."""
 	create_custom_fields(
-		_merge(_wc_id_fields(), _extra_fields(), _doc_email_fields(), _doc_link_fields()),
+		_merge(
+			_wc_id_fields(), _extra_fields(), _doc_email_fields(), _doc_link_fields(), _item_tax_hint_fields()
+		),
 		ignore_validate=True,
 	)
