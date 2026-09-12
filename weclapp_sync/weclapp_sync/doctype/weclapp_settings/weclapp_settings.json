@@ -28,6 +28,7 @@
   "run_full_import",
   "section_debug",
   "debug_max_pages_per_type",
+  "sync_attachments",
   "tab_mapping",
   "section_mapping_defaults",
   "mapping_defaults_help",
@@ -228,6 +229,13 @@
    "fieldname": "debug_max_pages_per_type",
    "fieldtype": "Int",
    "label": "Max. Seiten pro Objekttyp"
+  },
+  {
+   "default": "0",
+   "description": "Zusätzliche WeClapp-Aufrufe pro Datensatz (Artikelbilder, Beleg-PDFs) - macht Testläufe spürbar langsamer. Für einen echten Vollimport aktivieren.",
+   "fieldname": "sync_attachments",
+   "fieldtype": "Check",
+   "label": "Bilder/Dokumente mitsynchronisieren"
   },
   {
    "fieldname": "section_mapping_defaults",

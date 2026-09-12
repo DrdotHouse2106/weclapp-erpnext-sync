@@ -111,6 +111,10 @@ keine Vorab-Cache-Ordner wie im Vorgänger-Importer, siehe dessen `WC_CACHE_IMAG
 Migration).
 **Noch nicht gegen die Live-Instanz getestet** (Custom Field + Client Script/Attachments nach
 Redeploy prüfen).
+**Nachtrag:** auf Nutzer-Wunsch per neuem Settings-Schalter `sync_attachments` (Check, Default
+AUS) abschaltbar - pro Datensatz 1-2 zusätzliche WeClapp-Aufrufe (Bild-/Dokument-Download), das
+verlangsamt Testläufe spürbar. Zentral geprüft in `_attachments._enabled()`, nicht an jeder
+Aufrufstelle im jeweiligen Mapper. Für einen echten Vollimport bewusst einschalten.
 
 ### Nachtrag 2026-09-12: Set-/Bundle-Artikel (WeClapp "Stückliste") -> ERPNext Product Bundle
 Nutzer-Fund: Artikel SK000076 (`articleType == "SALES_BILL_OF_MATERIAL"`, WeClapp nennt das im

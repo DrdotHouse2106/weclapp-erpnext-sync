@@ -9,12 +9,22 @@ Idempotent über den WeClapp-Dateinamen: ist am Zieldokument schon eine `File` m
 Namen angehängt, wird nichts erneut heruntergeladen. Ein Fehler bei einer einzelnen Datei bricht
 nie den ganzen Datensatz-Upsert ab (gleiche Fehlertoleranz wie im Vorgänger, siehe dessen
 `upload_weclapp_documents`/`_upload_article_images`).
+
+Über Settings-Schalter `sync_attachments` (Default aus) abschaltbar - pro Datensatz ein bis zwei
+zusätzliche WeClapp-Aufrufe, macht Testläufe mit vielen Datensätzen spürbar langsamer. Der
+Schalter wird hier zentral geprüft, nicht an jeder Aufrufstelle im jeweiligen Mapper.
 """
 
 from __future__ import annotations
 
 import frappe
 from frappe.utils.file_manager import save_file
+
+from weclapp_sync.sync.settings import get_settings
+
+
+def _enabled() -> bool:
+	return bool(get_settings().sync_attachments)
 
 
 def _existing_file_names(doctype: str, name: str) -> set[str]:
@@ -29,8 +39,9 @@ def _existing_file_names(doctype: str, name: str) -> set[str]:
 
 def attach_weclapp_documents(client, weclapp_doctype, weclapp_id, target_doctype: str, target_name: str) -> None:
 	"""Alle an einen WeClapp-Beleg gehängten Dokumente (i.d.R. das PDF, generische `document`-
-	Entität) als Frappe-File am Zieldokument anhängen. No-op ohne Client/ID/Dokumente."""
-	if client is None or not weclapp_id or not target_name:
+	Entität) als Frappe-File am Zieldokument anhängen. No-op ohne Client/ID/Dokumente oder wenn
+	`sync_attachments` in den Settings deaktiviert ist."""
+	if client is None or not weclapp_id or not target_name or not _enabled():
 		return
 	try:
 		docs = client.get_documents(weclapp_doctype, str(weclapp_id))
@@ -56,9 +67,10 @@ def attach_article_images(client, record: dict, item_code: str) -> None:
 	"""WeClapp `articleImages` (im Artikel-Payload eingebettete Metadaten, kein Extra-Aufruf
 	nötig) als Frappe-File am Item anhängen. Das Hauptbild (`mainImage`) wird zusätzlich als
 	`Item.image` gesetzt - Download über die artikel-eigene `downloadArticleImage`-Aktion
-	(siehe client.iter_article_image_content), nicht die generische `document`-Entität."""
+	(siehe client.iter_article_image_content), nicht die generische `document`-Entität. No-op,
+	wenn `sync_attachments` in den Settings deaktiviert ist."""
 	images = record.get("articleImages") or []
-	if client is None or not images or not item_code:
+	if client is None or not images or not item_code or not _enabled():
 		return
 
 	article_id = record.get("id")
