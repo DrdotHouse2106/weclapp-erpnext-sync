@@ -20,7 +20,7 @@ def enqueue_due_delta_sync() -> None:
 	if not settings.enabled or not settings.enable_scheduled_delta:
 		return
 
-	if _has_running_run("Delta Sync"):
+	if _has_running_run():
 		return
 
 	if not _is_due(settings):
@@ -55,10 +55,15 @@ def recover_stale_runs() -> None:
 	frappe.db.commit()
 
 
-def _has_running_run(mode: str) -> bool:
-	return bool(
-		frappe.get_all("WeClapp Sync Run", filters={"mode": mode, "status": "Running"}, limit=1)
-	)
+def _has_running_run() -> bool:
+	"""Irgendein Lauf (Vollimport ODER Delta) noch "Running"? **Bugfix 2026-09-12:** prüfte
+	bisher nur denselben Modus (`mode == "Delta Sync"`) - der Scheduler-Tick hat dadurch einen
+	Delta-Sync (WC-SYNC-00032) parallel zu einem noch laufenden Vollimport (WC-SYNC-00031)
+	enqueued. Beide liefen gleichzeitig gegen dieselbe WeClapp-Instanz/ERPNext-DB - Rate-Limit-
+	Konkurrenz und ein Race beim Upsert (Existenzprüfung + Insert sind zwischen zwei Prozessen
+	nicht atomar, Gefahr doppelt angelegter Datensätze). Live beobachtet: der Vollimport blieb
+    danach auf `purchase_order`/`purchase_invoice` stehen, obwohl `abort_requested=1` gesetzt war."""
+	return bool(frappe.get_all("WeClapp Sync Run", filters={"status": "Running"}, limit=1))
 
 
 def _is_due(settings) -> bool:

@@ -375,10 +375,16 @@ class WeClappSettings(Document):
 		if not self.enabled:
 			frappe.throw("WeClapp Sync ist deaktiviert.")
 
-		if frappe.get_all(
-			"WeClapp Sync Run", filters={"mode": "Full Import", "status": "Running"}, limit=1
-		):
-			frappe.throw("Es läuft bereits ein Vollimport.")
+		# Gegen JEDEN laufenden Lauf prüfen, nicht nur denselben Modus - sonst startet ein
+		# Vollimport parallel zu einem laufenden Delta-Sync (oder umgekehrt der Scheduler-Tick
+		# parallel zu einem Vollimport, siehe scheduler.py._has_running_run() Bugfix 2026-09-12).
+		# Beide gegen dieselbe WeClapp-Instanz/ERPNext-DB gleichzeitig laufen zu lassen, ist ein
+		# Rennen (Existenzprüfung+Insert beim Upsert ist zwischen zwei Prozessen nicht atomar).
+		running = frappe.get_all(
+			"WeClapp Sync Run", filters={"status": "Running"}, fields=["mode"], limit=1
+		)
+		if running:
+			frappe.throw(f"Es läuft bereits ein Sync-Vorgang ({running[0].mode}).")
 
 		frappe.enqueue(
 			"weclapp_sync.sync.engine.run_full_import",

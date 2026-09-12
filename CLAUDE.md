@@ -34,6 +34,26 @@ Field + Client Script, Tax Rules/Categories) - **Custom Field + Client Script** 
   dann eine Testposition manuell in einem neuen Angebot erfassen und prüfen, ob der Steuersatz
   vorgeschlagen wird).
 
+### Nachtrag 2026-09-12: Scheduler enqueued Delta-Sync parallel zu laufendem Vollimport
+Nutzer meldete: `WC-SYNC-00031` (Vollimport) blieb trotz `abort_requested=1` auf
+`purchase_order`/`purchase_invoice` stehen. Per Read-Only-Check direkt gegen die Instanz
+gefunden: parallel lief bereits `WC-SYNC-00032` (**Delta Sync**, vom Scheduler-Tick um 12:40
+automatisch enqueued) - zog gerade `crm_event` (3784, gerade erst aktiviert) und `stock_movement`
+(Seite 41, ebenfalls gerade aktiviert, praktisch ein Erstimport von ~16.000 Datensätzen).
+**Root Cause:** `scheduler.py` `_has_running_run(mode)` prüfte nur auf denselben Modus - der
+Tick sah keinen laufenden "Delta Sync" (der Vollimport lief ja unter `mode="Full Import"`) und
+enqueued einen neuen Delta-Sync-Job, OBWOHL der Vollimport noch aktiv war. Beide liefen dann
+gleichzeitig gegen dieselbe WeClapp-Instanz (Rate-Limit-Konkurrenz - erklärt die Stockung) UND
+gegen dieselbe ERPNext-DB (Existenzprüfung+Insert beim Upsert ist zwischen zwei Prozessen NICHT
+atomar - Risiko doppelt angelegter Datensätze, falls beide zufällig denselben Datensatz treffen).
+Dieselbe Lücke steckte auch im "Vollimport starten"-Button (`weclapp_settings.py`
+`start_full_import()`) - prüfte nur auf einen zweiten laufenden Vollimport, nicht auf einen
+laufenden Delta-Sync.
+**Fix:** `_has_running_run()` (ohne Modus-Parameter) prüft jetzt auf JEDEN laufenden Sync-Lauf,
+beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffen (kein Write
+gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
+Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
+
 ### Nachtrag 2026-09-12: Set-/Bundle-Artikel (WeClapp "Stückliste") -> ERPNext Product Bundle
 Nutzer-Fund: Artikel SK000076 (`articleType == "SALES_BILL_OF_MATERIAL"`, WeClapp nennt das im
 UI "Stückliste" - eine reine Verkaufs-Bündelung, KEINE Fertigungs-Stückliste, keine eigene
