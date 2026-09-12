@@ -34,6 +34,27 @@ Field + Client Script, Tax Rules/Categories) - **Custom Field + Client Script** 
   dann eine Testposition manuell in einem neuen Angebot erfassen und prüfen, ob der Steuersatz
   vorgeschlagen wird).
 
+### Nachtrag 2026-09-12: Set-/Bundle-Artikel (WeClapp "Stückliste") -> ERPNext Product Bundle
+Nutzer-Fund: Artikel SK000076 (`articleType == "SALES_BILL_OF_MATERIAL"`, WeClapp nennt das im
+UI "Stückliste" - eine reine Verkaufs-Bündelung, KEINE Fertigungs-Stückliste, keine eigene
+Lagerbuchung der Komponenten) wurde als Item angelegt, aber seine Zusammensetzung
+(`salesBillOfMaterialItems`, hier: SK000062 x1, SK000075 x2, SK000077 x4) war nirgends in
+ERPNext sichtbar - der Mapper hat dieses Feld schlicht nie gelesen. Live per GET geprüft: **69
+solcher Artikel** insgesamt (`articleType`-Enum: SHIPPING_COST, STORABLE,
+SALES_BILL_OF_MATERIAL, LOADING_EQUIPMENT, PACKAGING_UNIT, SERVICE, SERVICE_QUOTA, BASIC,
+LOADING_EQUIPMENT_STORABLE - nur SALES_BILL_OF_MATERIAL relevant für dieses Feature, war im
+Vorgänger-Importer nie gebaut/dokumentiert).
+**Fix:** `article.py` `_sync_product_bundle()` (aus `upsert()` aufgerufen, analog zu
+`_sync_prices()`) bildet `salesBillOfMaterialItems` auf ERPNexts **Product Bundle** ab - das ist
+genau das passende ERPNext-Konzept dafür (nicht-lagerhaltiger Verkaufsartikel, der beim
+Beleg-Erfassen zu seinen Bestandteilen "explodiert", keine eigene Buchung/kein BOM/Manufacturing).
+`Product Bundle.new_item_code` = Item-Code (Controller-Autoname, kein `set_name` nötig),
+`items`-Kindtabelle aus den Komponenten. Komponenten über das schon vorhandene
+`_transaction.resolve_line_item()` aufgelöst - legt bei Bedarf einen Stub-Artikel an, falls eine
+Komponente in der Iterationsreihenfolge des Artikel-Vollimports noch nicht drankam (identisches
+Muster wie bei Beleg-Positionen), ein späterer Durchlauf/Re-Run vervollständigt sie automatisch.
+**Noch nicht gegen die Live-Instanz getestet.**
+
 ### Nachtrag 2026-09-12: doppeltes "Details" war ein GANZ ANDERER Bug (`wc_sync_section`)
 Nutzer meldete den doppelten "Details"-Bereich erneut, obwohl der Zusatzfelder-Tab-Fix
 (Increment 12, Commit 319a9f7) stand. **Per Live-GET verifiziert**

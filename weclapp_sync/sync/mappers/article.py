@@ -35,6 +35,14 @@ gesetzt"-Lösung möglich.
 Client Script (`setup/item_tax_hint.py`) liest es beim manuellen Anlegen einer Belegzeile im
 Browser aus und schlägt den Zeilen-Steuersatz vor. Der Sync selbst läuft serverseitig in Python
 und triggert nie ein Client Script - importierte/synctierte Belege bleiben unberührt.
+
+**Set-/Bundle-Artikel** (`articleType == "SALES_BILL_OF_MATERIAL"`, WeClapps "Stückliste" im
+Verkaufssinn - keine Fertigungs-Stückliste, kein Lagerabgang der Komponenten): 69 Stück live.
+`_sync_product_bundle()` bildet `salesBillOfMaterialItems` auf ERPNexts **Product Bundle** ab
+(genau das ERPNext-Äquivalent: nicht-lagerhaltiger Verkaufsartikel, der beim Beleg-Erfassen zu
+seinen Bestandteilen "explodiert" - keine eigene Buchung). Komponenten über `resolve_line_item()`
+aufgelöst (Stub-Anlage, falls eine Komponente in der Iterationsreihenfolge des Artikel-Vollimports
+noch nicht drankam - wie bei Belegzeilen, ein späterer Durchlauf/Re-Run vervollständigt sie).
 """
 
 from __future__ import annotations
@@ -43,6 +51,8 @@ from typing import Any
 
 import frappe
 from frappe.utils import add_days
+
+from weclapp_sync.sync.mappers._transaction import _line_title, resolve_line_item
 
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.sync.mappers import _custom_attributes as ca
@@ -146,7 +156,35 @@ class ArticleMapper(Mapper):
 		if not name:
 			return None
 		self._sync_prices(name, record)
+		self._sync_product_bundle(name, record)
 		return name
+
+	def _sync_product_bundle(self, item_code: str, record: dict) -> None:
+		"""WeClapp "Sales Bill of Material" (Set-/Bundle-Artikel) -> ERPNext "Product Bundle".
+		Siehe Moduldocstring. No-op für alle anderen Artikeltypen."""
+		sub_items = record.get("salesBillOfMaterialItems") or []
+		if record.get("articleType") != "SALES_BILL_OF_MATERIAL" or not sub_items:
+			return
+
+		rows: list[dict] = []
+		for sub in sorted(sub_items, key=lambda s: s.get("positionNumber") or 0):
+			component = resolve_line_item(sub, _line_title(sub))
+			if component == item_code:
+				continue  # Sicherheitsnetz gegen Ringschluss (Artikel als eigene Komponente)
+			rows.append({"item_code": component, "qty": float(sub.get("quantity") or 0) or 1.0})
+		if not rows:
+			return
+
+		exists = frappe.db.exists("Product Bundle", item_code)
+		doc = frappe.get_doc("Product Bundle", item_code) if exists else frappe.new_doc("Product Bundle")
+		if not exists:
+			doc.new_item_code = item_code
+		doc.set("items", rows)
+		doc.flags.ignore_permissions = True
+		if exists:
+			doc.save()
+		else:
+			doc.insert()
 
 	def _sync_prices(self, item_code: str, record: dict) -> None:
 		"""Volle WeClapp-Preishistorie je (Preiskanal, Mengenstaffel, Kunde) -> ERPNext Item Prices.
