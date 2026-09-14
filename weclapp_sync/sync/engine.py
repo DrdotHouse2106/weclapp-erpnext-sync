@@ -120,6 +120,14 @@ def sync_object_type(
 				break
 
 			for idx, record in enumerate(page):
+				# Abbruch jetzt auch PRO DATENSATZ prüfen, nicht nur an der Seitengrenze -
+				# seit Bild-/Dokument-Downloads pro Artikel/Beleg kann eine einzelne Seite
+				# lange dauern, "Abbruch anfordern" wirkte dadurch träge. Ein `db.get_value`
+				# auf den Primärschlüssel ist gegen den WeClapp-/Datei-Aufwand pro Datensatz
+				# vernachlässigbar.
+				if _abort_requested(run_name):
+					aborted = True
+					break
 				# Savepoint pro Datensatz: schlägt einer fehl, wird nur SEIN Teil
 				# zurückgerollt, die schon verarbeiteten Datensätze der Seite bleiben.
 				savepoint = f"wcrec_{idx}"
@@ -137,6 +145,11 @@ def sync_object_type(
 					_log_record_failure(run_name, spec, record, tb)
 
 			frappe.db.commit()
+			if aborted:
+				# Seite nur teilweise verarbeitet - KEINEN Fortschritt für diese Seite
+				# speichern, ein Folgelauf beginnt sie neu (idempotent, kein Datensatz geht
+				# verloren, die schon verarbeiteten werden einfach erneut upsertet).
+				break
 			_save_progress(spec.key, run_name, page_no)
 
 		if aborted:

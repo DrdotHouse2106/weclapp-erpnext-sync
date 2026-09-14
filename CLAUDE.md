@@ -69,6 +69,19 @@ beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffe
 gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
 Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
 
+### Nachtrag 2026-09-14: Abbruch pro Datensatz statt nur pro Seite prüfen
+WC-SYNC-00203 blieb trotz `abort_requested=1` hängen (manuell auf "Aborted" korrigiert - dieselbe
+Ursache wie bei WC-SYNC-00031: ein eigener Redeploy während des laufenden Vollimports killt den
+RQ-Worker, der Run bleibt für immer "Running" stehen, siehe Nachtrag zu Scheduler/Vollimport
+oben). Unabhängig davon: `engine.sync_object_type()` prüfte `abort_requested` bisher nur an
+Seitengrenzen (`for page in ...`), nicht pro Datensatz (`for idx, record in enumerate(page)`).
+Mit den jetzt langsameren Artikel-/Beleg-Seiten (Bild-/Dokument-Downloads pro Datensatz) kann
+eine einzelne Seite deutlich länger dauern - "Abbruch anfordern" wirkte dadurch träge. Jetzt wird
+`_abort_requested()` auch innerhalb der Datensatz-Schleife geprüft (ein `db.get_value` auf den
+Primärschlüssel ist gegen den WeClapp-/Datei-Aufwand pro Datensatz vernachlässigbar). Bei
+Abbruch mitten in einer Seite wird für diese Seite KEIN Fortschritt gespeichert - ein Folgelauf
+beginnt sie neu (idempotent, kein Datensatz geht verloren).
+
 ### Nachtrag 2026-09-14: SK000076 seit Tagen kaputt - verschachtelte Sets + Nachlauf-Isolierung
 Nutzer-Fund: bei SK000076 fehlte trotz mehrfachem Vollimport das Bild. Grund war NICHT das Bild
 selbst, sondern ein Bug, der den **kompletten Artikel-Datensatz** bei jedem Lauf seit dem 12.09.
