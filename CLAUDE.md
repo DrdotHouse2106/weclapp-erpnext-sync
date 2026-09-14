@@ -69,6 +69,25 @@ beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffe
 gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
 Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
 
+### Nachtrag 2026-09-14/15: Vollimport-Job-Timeout war das Delta-Sync-Timeout
+WC-SYNC-00205 blieb ohne manuellen Abbruch (`abort_requested=0`) hängen - `stock_movement` hat
+nie ein Ergebnis geliefert, nach über einer Stunde ohne Fortschritt hat `recover_stale_runs`
+den Lauf automatisch als "Aborted (stale)" markiert. **Root Cause:** `start_full_import()`
+(`weclapp_settings.py`) und der Scheduler-Delta-Job (`scheduler.py`) haben beide dasselbe
+Settings-Feld `delta_job_timeout` (Default 3600 s = 1 h) als **hartes RQ-Job-Timeout**
+verwendet. Für einen Delta-Sync passt das (klein, soll schnell fertig sein) - für einen
+**Vollimport ist das viel zu knapp**, besonders jetzt mit aktiviertem Bild-/Dokument-Sync
+(langsamere Artikel-/Beleg-Seiten). Live beobachtet: allein Kunde/Lieferant/CRM/Artikel
+brauchten ~54 Minuten, danach hat RQ den Job zwangsweise gekillt (SIGKILL o.ä.) - der Prozess
+konnte seinen eigenen Status nicht mehr aktualisieren, exakt dasselbe Symptom wie bei einem
+Redeploy-Kill, aber diesmal OHNE Redeploy (vom Nutzer bestätigt).
+**Fix:** neues, eigenständiges Settings-Feld `full_import_job_timeout` (Int, Default 21600 s =
+6 h), nur für `start_full_import()`. `delta_job_timeout` bleibt unverändert nur für den
+Scheduler-Delta-Job. **Unsicher, ob Frappe Cloud den Plan-seitig gedeckelten Job-Timeout
+überhaupt so hoch zulässt** - falls der Vollimport trotzdem vorzeitig endet, dort als Nächstes
+nachsehen. **Noch nicht erneut getestet** (nächster Vollimport-Redeploy + -Lauf zeigt, ob das
+reicht).
+
 ### Nachtrag 2026-09-15: Product Bundle war am Item unsichtbar
 Nutzer-Fund: bei SK000076 (Set-Artikel) sah man im Artikel selbst nirgends, welche Artikel dazu
 gehören - Product Bundle ist ein eigener ERPNext-Doctype ohne Standard-Verknüpfung im Item-

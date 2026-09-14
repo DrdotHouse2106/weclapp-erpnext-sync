@@ -25,6 +25,7 @@
   "object_types",
   "section_full_import",
   "full_import_help",
+  "full_import_job_timeout",
   "run_full_import",
   "section_debug",
   "debug_max_pages_per_type",
@@ -210,6 +211,13 @@
    "fieldname": "full_import_help",
    "fieldtype": "HTML",
    "options": "<p class=\"text-muted\">Startet einen vollständigen Import aller aktivierten Objekttypen ohne Delta-Filter, als langlaufenden Background-Job. Idempotent – bereits vorhandene ERPNext-Datensätze werden aktualisiert, nicht doppelt angelegt. Für Erstinstallation oder nach einem ERPNext-Reset.</p>"
+  },
+  {
+   "default": "21600",
+   "description": "Hartes RQ-Job-Timeout für den Vollimport-Hintergrundjob (eigenes Feld, NICHT das Delta-Sync-Timeout oben - ein Vollimport mit vielen Datensätzen und aktiviertem Bild-/Dokument-Sync kann deutlich über eine Stunde dauern; wird das Timeout überschritten, killt RQ den Job mitten im Lauf, der Sync-Lauf bleibt bis zur nächsten stündlichen Aufräumroutine fälschlich auf \"Running\" stehen).",
+   "fieldname": "full_import_job_timeout",
+   "fieldtype": "Int",
+   "label": "Vollimport Job-Timeout (Sekunden)"
   },
   {
    "depends_on": "enabled",

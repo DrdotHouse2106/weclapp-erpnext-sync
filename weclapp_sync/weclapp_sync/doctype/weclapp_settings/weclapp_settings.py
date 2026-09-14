@@ -386,11 +386,16 @@ class WeClappSettings(Document):
 		if running:
 			frappe.throw(f"Es läuft bereits ein Sync-Vorgang ({running[0].mode}).")
 
+		# Eigenes, viel größeres Timeout als der Delta-Sync (siehe full_import_job_timeout-
+		# Feldbeschreibung) - 2026-09-14 live beobachtet: mit `delta_job_timeout` (Default 3600 s)
+		# killte RQ den Vollimport-Job nach genau einer Stunde mitten im Lauf (bei
+		# aktiviertem Bild-/Dokument-Sync dauert ein Vollimport locker länger), der Run blieb bis
+		# zur nächsten stündlichen `recover_stale_runs`-Aufräumroutine fälschlich auf "Running".
 		frappe.enqueue(
 			"weclapp_sync.sync.engine.run_full_import",
 			queue="long",
 			job_id="weclapp_sync_full_import",
-			timeout=self.delta_job_timeout or 3600,
+			timeout=self.full_import_job_timeout or 21600,
 		)
 		return "Vollimport wurde gestartet – Fortschritt unter „WeClapp Sync Run“."
 
