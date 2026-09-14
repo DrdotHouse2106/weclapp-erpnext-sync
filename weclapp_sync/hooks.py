@@ -38,6 +38,15 @@ scheduler_events = {
 }
 
 # ---------------------------------------------------------------------------
+# Formular-Verknüpfungen ("Connections"-Tab)
+# ---------------------------------------------------------------------------
+# Product Bundle (Set-/Bundle-Artikel, siehe sync/mappers/article.py) ist sonst am Item selbst
+# nirgends sichtbar - eigener Doctype, kein Standard-Connections-Eintrag in ERPNext.
+override_doctype_dashboards = {
+	"Item": "weclapp_sync.item_dashboard.get_dashboard_data",
+}
+
+# ---------------------------------------------------------------------------
 # Installation / Migration
 # ---------------------------------------------------------------------------
 after_install = "weclapp_sync.install.after_install"

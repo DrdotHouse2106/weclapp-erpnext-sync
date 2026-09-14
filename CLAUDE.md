@@ -69,6 +69,14 @@ beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffe
 gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
 Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
 
+### Nachtrag 2026-09-15: Product Bundle war am Item unsichtbar
+Nutzer-Fund: bei SK000076 (Set-Artikel) sah man im Artikel selbst nirgends, welche Artikel dazu
+gehören - Product Bundle ist ein eigener ERPNext-Doctype ohne Standard-Verknüpfung im Item-
+Formular. Fix: `hooks.py` `override_doctype_dashboards` + neues `item_dashboard.py` ergänzen den
+"Verknüpfungen"-Reiter des Items um einen Product-Bundle-Eintrag (Link-Feld `new_item_code`,
+weicht vom Standard `item_code` ab, deshalb `non_standard_fieldnames` nötig). **Noch nicht gegen
+die Live-Instanz getestet** (Connections-Tab nach Redeploy prüfen).
+
 ### Nachtrag 2026-09-14: Abbruch pro Datensatz statt nur pro Seite prüfen
 WC-SYNC-00203 blieb trotz `abort_requested=1` hängen (manuell auf "Aborted" korrigiert - dieselbe
 Ursache wie bei WC-SYNC-00031: ein eigener Redeploy während des laufenden Vollimports killt den
