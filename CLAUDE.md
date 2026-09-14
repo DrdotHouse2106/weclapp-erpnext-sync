@@ -69,6 +69,44 @@ beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffe
 gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
 Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
 
+### Nachtrag 2026-09-14: SK000076 seit Tagen kaputt - verschachtelte Sets + Nachlauf-Isolierung
+Nutzer-Fund: bei SK000076 fehlte trotz mehrfachem Vollimport das Bild. Grund war NICHT das Bild
+selbst, sondern ein Bug, der den **kompletten Artikel-Datensatz** bei jedem Lauf seit dem 12.09.
+zunichtegemacht hat (`modified` seit Tagen eingefroren, WeClapp Sync Log zeigte denselben Fehler
+in WC-SYNC-00034/00042/00203): `_sync_product_bundle()` warf `ValidationError: "Child Item
+should not be a Product Bundle"`, weil SK000076s Komponente SK000062 **selbst** ein Set ist
+(WeClapp erlaubt Sets aus Sets, ERPNext verbietet verschachtelte Product Bundles kategorisch).
+Da die Engine bei JEDER Exception aus `mapper.upsert()` den kompletten Datensatz-Savepoint
+zurückrollt (siehe engine.py), gingen dadurch auch die längst korrekten Kernfelder des Items
+(inkl. der neuen `wc_average_delivery_time`/`lead_time_days`-Felder) jedes Mal mit verloren -
+obwohl der Lauf insgesamt "ok" meldete (Einzel-Datensatz-Fehlschläge zählen nicht als Lauf-Abbruch).
+- **Fix 1 (verschachtelte Sets):** neue Hilfsfunktion `_flatten_bundle()` in `article.py` - prüft
+  je Komponente, ob sie selbst ein Product Bundle ist, und löst dann rekursiv (Mengen
+  multipliziert, Zyklen-/Tiefenschutz) bis auf reale Items auf. Ist die Komponente zum
+  Sync-Zeitpunkt noch nicht als eigenes Bundle angelegt, bleibt sie vorerst als einfache Zeile
+  stehen - ein späterer Re-Run holt die Auflösung nach (`items` wird bei jedem Lauf komplett neu
+  aufgebaut). Live bestätigt: SK000062 (Komponente von SK000076) UND 76110 (Komponente von
+  76088) sind beide selbst Sets - betraf also mind. 2 Artikel im aktuellen Lauf.
+- **Fix 2 (Nachlauf-Isolierung, wichtiger als Fix 1):** `ArticleMapper.upsert()` führt
+  `_sync_prices`/`_sync_product_bundle`/`_attach_images` jetzt JEDES EINZELN in einem eigenen
+  try/except aus (`frappe.log_error` statt Weiterwerfen) - ein Bug in einem dieser
+  Nachlauf-Schritte darf nie wieder die schon gespeicherten Kernfelder mit sich reißen. Das ist
+  die eigentliche strukturelle Lücke, die den Bug so lange unsichtbar gemacht hat (der Vollimport
+  zeigte nur "4 fehlgeschlagen von 6217", nicht "diese 4 Artikel sind seit Tagen komplett
+  eingefroren"). **Tradeoff bewusst in Kauf genommen:** ein Fehler in diesen drei Schritten
+  taucht jetzt im Error Log auf statt im WeClapp Sync Log (Run-Fehlerzähler sieht es nicht mehr)
+  - besser als der vorherige Totalverlust der Kernfelder.
+- **Dritter, unabhängiger Fund im selben Lauf:** 2 von 4 Artikel-Fehlschlägen (74016, 407033R)
+  waren `frappe.exceptions.QueueOverloaded: Zu viele Hintergrundjobs in der Warteschlange (550)`
+  - vermutlich eine Nebenwirkung des ersten großen Laufs mit aktiviertem `sync_attachments`
+  (viele zusätzliche File-Inserts). Durch Fix 2 jetzt ebenfalls nicht mehr datenverlust-relevant
+  (nur noch der Bild-/Dokument-Schritt selbst schlägt fehl, nicht der ganze Artikel). Ursache
+  nicht abschließend isoliert (Frappe-weites `MAX_QUEUED_JOBS=500`-Limit, konnte nicht sicher auf
+  File-Uploads vs. allgemeine Systemlast während des langen Laufs zurückgeführt werden) - falls
+  das öfter auftritt, ggf. Bild-/Dokument-Sync in kleineren Etappen fahren.
+- **Noch nicht erneut getestet** - nächster Vollimport sollte SK000076 (und 76088) korrekt mit
+  Bild UND korrekt aufgelöstem, geflachtem Product Bundle zeigen.
+
 ### Nachtrag 2026-09-12: Artikelbilder, Beleg-PDFs, Lieferzeit-Felder (Cross-Session-Absprache)
 Nutzer-Fragen: (1) Wiederbeschaffungstage/Durchschnittliche Lieferzeit aus WeClapp gesynct? (2)
 Bilder bei Artikeln, Dokumente (PDFs) bei Belegen? (3) Für die Lieferzeit ein gemeinsames Feld

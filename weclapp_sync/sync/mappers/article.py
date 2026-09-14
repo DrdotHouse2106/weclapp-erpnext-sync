@@ -176,26 +176,52 @@ class ArticleMapper(Mapper):
 		name = super().upsert(record)
 		if not name:
 			return None
-		self._sync_prices(name, record)
-		self._sync_product_bundle(name, record)
-		attach_article_images(self.client, record, name)
+		# Jeder Nachlauf-Schritt einzeln abgesichert: die Engine rollt bei JEDER Exception aus
+		# upsert() den KOMPLETTEN Datensatz zurück (Savepoint vor dem Aufruf, siehe engine.py) -
+		# ein Bug in einem einzelnen Nachlauf-Schritt darf also nicht die schon gespeicherten
+		# Kernfelder des Items mit sich reißen. Live beobachtet (2026-09-14): ein Fehler in
+		# _sync_product_bundle hat dadurch bei SK000076 seit dem 12.09. JEDEN Sync-Versuch
+		# komplett zunichtegemacht, inkl. `modified` eingefroren - kein einziges Kernfeld/Bild
+		# kam je an, obwohl der Vollimport "ok" meldete (der einzelne Datensatz-Fehlschlag wird
+		# pro Datensatz gezählt, nicht als Lauf-Abbruch).
+		for step in (self._sync_prices, self._sync_product_bundle, self._attach_images):
+			try:
+				step(name, record)
+			except Exception:
+				frappe.log_error(title=f"WeClapp Artikel-Nachlauf: {step.__name__}", message=frappe.get_traceback())
 		return name
+
+	def _attach_images(self, item_code: str, record: dict) -> None:
+		attach_article_images(self.client, record, item_code)
 
 	def _sync_product_bundle(self, item_code: str, record: dict) -> None:
 		"""WeClapp "Sales Bill of Material" (Set-/Bundle-Artikel) -> ERPNext "Product Bundle".
-		Siehe Moduldocstring. No-op für alle anderen Artikeltypen."""
+		Siehe Moduldocstring. No-op für alle anderen Artikeltypen.
+
+		**Verschachtelte Sets** (eine Komponente ist selbst ein Set, WeClapp erlaubt das -
+		live SK000076 enthält SK000062, das selbst ein Set ist): ERPNext verbietet das ("Child
+		Item should not be a Product Bundle", live-Fehler 2026-09-14). Deshalb wird jede
+		Komponente, die bereits ein eigenes Product Bundle hat, rekursiv durch ihre eigenen
+		Komponenten ersetzt (Menge multipliziert, gleiche Artikel aufsummiert) - entspricht dem,
+		was WeClapp/der Nutzer tatsächlich verkauft. Ist die Komponente zum Zeitpunkt dieses
+		Laufs noch nicht als eigenes Bundle angelegt (Artikel-Reihenfolge), bleibt sie als
+		einfache Zeile stehen - ein späterer Re-Run holt die Auflösung nach (`items` wird bei
+		jedem Lauf komplett neu aufgebaut, kein Bestands-Matching)."""
 		sub_items = record.get("salesBillOfMaterialItems") or []
 		if record.get("articleType") != "SALES_BILL_OF_MATERIAL" or not sub_items:
 			return
 
-		rows: list[dict] = []
+		flat: dict[str, float] = {}
 		for sub in sorted(sub_items, key=lambda s: s.get("positionNumber") or 0):
 			component = resolve_line_item(sub, _line_title(sub))
 			if component == item_code:
 				continue  # Sicherheitsnetz gegen Ringschluss (Artikel als eigene Komponente)
-			rows.append({"item_code": component, "qty": float(sub.get("quantity") or 0) or 1.0})
-		if not rows:
+			qty = float(sub.get("quantity") or 0) or 1.0
+			for leaf_code, leaf_qty in _flatten_bundle(component, qty, {item_code}):
+				flat[leaf_code] = flat.get(leaf_code, 0) + leaf_qty
+		if not flat:
 			return
+		rows = [{"item_code": code, "qty": qty} for code, qty in flat.items()]
 
 		exists = frappe.db.exists("Product Bundle", item_code)
 		doc = frappe.get_doc("Product Bundle", item_code) if exists else frappe.new_doc("Product Bundle")
@@ -302,6 +328,25 @@ class ArticleMapper(Mapper):
 				doc.update(fields)
 				doc.flags.ignore_permissions = True
 				doc.insert()
+
+
+def _flatten_bundle(item_code: str, qty: float, seen: set[str], *, _depth: int = 0) -> list[tuple[str, float]]:
+	"""Löst `item_code` auf, falls es selbst ein Product Bundle ist (ERPNext erlaubt keine
+	verschachtelten Bundles, WeClapp schon) - rekursiv bis auf reale Items, Mengen multipliziert.
+	`seen` verhindert Ringschlüsse, `_depth` ist ein zusätzliches Sicherheitsnetz gegen
+	fehlerhafte WeClapp-Daten. Kein eigenes Bundle (oder Zyklus/zu tief) -> Zeile unverändert."""
+	if item_code in seen or _depth > 5 or not frappe.db.exists("Product Bundle", item_code):
+		return [(item_code, qty)]
+	inner_items = frappe.get_all(
+		"Product Bundle Item", filters={"parent": item_code}, fields=["item_code", "qty"], order_by="idx"
+	)
+	if not inner_items:
+		return [(item_code, qty)]
+	seen = seen | {item_code}
+	out: list[tuple[str, float]] = []
+	for row in inner_items:
+		out.extend(_flatten_bundle(row.item_code, qty * (row.qty or 1), seen, _depth=_depth + 1))
+	return out
 
 
 def _to_float(v, default: float) -> float:
