@@ -111,6 +111,7 @@ class SalesInvoiceMapper(TransactionMapper):
 				"wc_payment_status": record.get("paymentStatus") or None,
 			}
 		)
+		doc.update(self.currency_fields(record))
 
 		son = record.get("salesOrderNumber")
 		if son and frappe.db.exists("Sales Order", son):

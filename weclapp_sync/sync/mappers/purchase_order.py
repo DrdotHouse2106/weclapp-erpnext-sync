@@ -73,6 +73,7 @@ class PurchaseOrderMapper(TransactionMapper):
 				"wc_last_modified": str(record.get("lastModifiedDate") or "") or None,
 			}
 		)
+		doc.update(self.currency_fields(record))
 
 		# Streckengeschäft: der Verkaufsauftrag, für den direkt beim Lieferanten bestellt wurde.
 		son = record.get("salesOrderNumber")

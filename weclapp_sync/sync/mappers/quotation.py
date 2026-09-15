@@ -65,6 +65,7 @@ class QuotationMapper(TransactionMapper):
 				"wc_last_modified": str(record.get("lastModifiedDate") or "") or None,
 			}
 		)
+		doc.update(self.currency_fields(record))
 		if settings.default_sales_taxes_template and frappe.db.exists(
 			"Sales Taxes and Charges Template", settings.default_sales_taxes_template
 		):

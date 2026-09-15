@@ -95,12 +95,24 @@ def setup_payment_terms() -> None:
 # --------------------------------------------------------------------------- Fiscal Years
 def setup_fiscal_years() -> None:
 	"""Legt Geschäftsjahre vom frühesten WeClapp-Belegdatum bis nächstes Jahr an - ERPNext
-	lehnt Belege außerhalb eines Fiscal Year ab (FiscalYearError)."""
+	lehnt Belege außerhalb eines Fiscal Year ab (FiscalYearError).
+
+	**Bugfix 2026-09-15:** fehlende `purchaseInvoice`/`purchaseOrder` - Einkaufsbelege können
+	deutlich älter sein als das früheste Verkaufsdokument (live: Eingangsrechnungen von 2020 und
+	2022, während das früheste Verkaufsdatum jünger war). Ohne die beiden hier blieben 2020/2022
+	ohne Fiscal-Year-Datensatz -> `FiscalYearError` beim Import dieser Eingangsrechnungen (8
+	Fehlschläge im ersten vollständigen Lauf mit diesem Zeitrahmen)."""
 	client = get_client()
 	client.open()
 	earliest = None
 	try:
-		for entity, field in (("salesInvoice", "invoiceDate"), ("salesOrder", "orderDate"), ("quotation", "quotationDate")):
+		for entity, field in (
+			("salesInvoice", "invoiceDate"),
+			("salesOrder", "orderDate"),
+			("quotation", "quotationDate"),
+			("purchaseInvoice", "invoiceDate"),
+			("purchaseOrder", "orderDate"),
+		):
 			try:
 				rows = next(
 					client.iter_pages(entity, sort=field, properties=f"id,{field}", page_size=1), []

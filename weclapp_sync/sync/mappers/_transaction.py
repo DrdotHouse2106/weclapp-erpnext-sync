@@ -196,6 +196,28 @@ class TransactionMapper(Mapper):
 		amount = round(net_sum * percentage / 100.0, 2)
 		return -amount if negate else amount
 
+	# ------------------------------------------------------------------ Fremdwährung
+	@staticmethod
+	def currency_fields(record: dict) -> dict[str, Any]:
+		"""`currency`/`conversion_rate` für Fremdwährungsbelege (WeClapp `recordCurrencyName`).
+
+		**Bugfix 2026-09-15:** bisher gar nicht gesetzt - ERPNext bucht dann in der
+		Firmenwährung (EUR), lehnt das aber hart ab, sobald der Kunde/Lieferant selbst eine
+		andere `default_currency` führt (`InvalidCurrency`, live: 4 Eingangsrechnungen eines
+		USD-Lieferanten). `conversion_rate` NICHT aus WeClapps eigenem
+		`currencyConversionRate` übernommen - dessen Richtung ist mehrdeutig (live geprüft:
+		`grossAmountInCompanyCurrency = grossAmount / currencyConversionRate`, das Gegenteil von
+		ERPNexts `basisbetrag = betrag * conversion_rate`). Stattdessen robust aus den beiden
+		bereits vorhandenen Beträgen zurückgerechnet - keine Konventionsannahme nötig."""
+		currency = record.get("recordCurrencyName")
+		default = h.default_currency()
+		if not currency or currency == default:
+			return {}
+		gross = float(record.get("grossAmount") or 0)
+		gross_base = float(record.get("grossAmountInCompanyCurrency") or 0)
+		rate = round(gross_base / gross, 6) if gross and gross_base else 1.0
+		return {"currency": currency, "conversion_rate": rate}
+
 	# ------------------------------------------------------------------ Party-Guard
 	@staticmethod
 	def ensure_customer(number: str, record: dict) -> None:

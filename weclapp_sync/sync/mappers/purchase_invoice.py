@@ -110,6 +110,7 @@ class PurchaseInvoiceMapper(TransactionMapper):
 				"wc_payment_status": record.get("paymentStatus") or None,
 			}
 		)
+		doc.update(self.currency_fields(record))
 
 		po_refs = record.get("purchaseOrders") or []
 		if po_refs:

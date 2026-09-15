@@ -80,6 +80,7 @@ class SalesOrderMapper(TransactionMapper):
 				"wc_last_modified": str(record.get("lastModifiedDate") or "") or None,
 			}
 		)
+		doc.update(self.currency_fields(record))
 
 		qn = record.get("quotationNumber")
 		if qn and frappe.db.exists("Quotation", qn):

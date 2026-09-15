@@ -69,6 +69,30 @@ beide Stellen nutzen das. `WC-SYNC-00031` selbst wurde NICHT manuell eingegriffe
 gegen einen laufenden Job) - der bereits gesetzte `abort_requested=1` sollte greifen, sobald der
 Job (jetzt ohne Konkurrenz durch neue Delta-Sync-Ticks) die nächste Seitengrenze erreicht.
 
+### Nachtrag 2026-09-15: Erster vollständig durchgelaufener Vollimport (WC-SYNC-00263) + 2 Bugs
+**Erster Lauf, der den Timeout-Fix übersteht und komplett durchläuft** (09:08–13:02 Uhr, ~4 h):
+Kunde 5845/0, Lieferant 396/0, CRM 3784/0/111, Artikel 6221/0, Lagerbewegung 15969/0, Angebot
+119/0/1, Auftrag 3561/0/2, Rechnung 5302/0/39, Lieferschein 3339/0/22, Bestellung 668/0/1,
+**Eingangsrechnung 2825/8/61**. Die 8 Fehlschläge = zwei neue, echte Bugs (nicht das Timeout):
+- **`FiscalYearError`** (4x, Buchungsdatum 2020/2022): `setup/masters.py`
+  `setup_fiscal_years()` hat das früheste Datum bisher nur aus `salesInvoice`/`salesOrder`/
+  `quotation` ermittelt - **`purchaseInvoice`/`purchaseOrder` fehlten**. Einkaufsbelege können
+  deutlich älter sein als das früheste Verkaufsdokument. Fix: beide ergänzt.
+- **`InvalidCurrency`** (4x, 2 Lieferanten mit `default_currency = USD`, z.B. eine ChatGPT-Plus-
+  Abo-Rechnung von OpenAI): Belegs-Mapper haben `currency`/`conversion_rate` am Dokument bisher
+  NIE gesetzt - ERPNext bucht dann implizit in Firmenwährung (EUR) und lehnt das hart ab, sobald
+  der Lieferant/Kunde eine andere `default_currency` führt. **Kein reines Purchase-Invoice-
+  Problem** - betraf strukturell alle 5 Belegs-Mapper gleich (nur dort noch nicht durch einen
+  Fremdwährungsbeleg aufgefallen). Fix: neuer `TransactionMapper.currency_fields(record)` in
+  `_transaction.py`, aus WeClapp `recordCurrencyName` (Feld heißt bei allen Belegtypen gleich,
+  live geprüft: quotation/salesOrder/purchaseOrder/purchaseInvoice). `conversion_rate` NICHT aus
+  WeClapps eigenem `currencyConversionRate` (Richtung mehrdeutig - live: `grossAmountInCompany
+  Currency = grossAmount / currencyConversionRate`, umgekehrt zu ERPNexts `amount *
+  conversion_rate = basisbetrag`), sondern robust aus `grossAmountInCompanyCurrency / gross
+  Amount` zurückgerechnet. In quotation/sales_order/sales_invoice/purchase_order/purchase_
+  invoice eingehängt (`doc.update(self.currency_fields(record))`). **Noch nicht erneut
+  getestet** - nächster Vollimport sollte die 8 Fehlschläge auf 0 bringen.
+
 ### Nachtrag 2026-09-14/15: Vollimport-Job-Timeout war das Delta-Sync-Timeout
 WC-SYNC-00205 blieb ohne manuellen Abbruch (`abort_requested=0`) hängen - `stock_movement` hat
 nie ein Ergebnis geliefert, nach über einer Stunde ohne Fortschritt hat `recover_stale_runs`
