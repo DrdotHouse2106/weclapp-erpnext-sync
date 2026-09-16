@@ -3,6 +3,12 @@
 Die Reihenfolge (SYNC_ORDER) stammt aus reference/main.py und ergibt sich aus den
 Fremdschlüssel-Abhängigkeiten: Kunden vor Aufträgen vor Rechnungen vor Zahlungen usw.
 Sowohl der Vollimport als auch der Delta-Sync laufen die Typen in dieser Reihenfolge durch.
+
+`sort="id"` auf jeder Spec (Bugfix 2026-09-16): ohne festen Sort liefert WeClapp die
+Standard-Reihenfolge, die sich verschieben kann, wenn während eines laufenden Vollimports
+Datensätze gelöscht werden - eine bereits abgerufene Seite würde dann Datensätze "verlieren",
+die der nachfolgende Delta-Sync nicht nachholt (ihr `lastModifiedDate` liegt vor dem letzten
+Watermark). Sortierung nach `id` ist stabil unabhängig von Löschungen/Änderungen.
 """
 
 from __future__ import annotations
@@ -105,6 +111,7 @@ register(
 		weclapp_doctype=WeClappDocType.CUSTOMER,
 		target_doctype="Customer",
 		mapper_path="weclapp_sync.sync.mappers.customer:CustomerMapper",
+		sort="id",
 	)
 )
 
@@ -115,6 +122,7 @@ register(
 		weclapp_doctype=WeClappDocType.SUPPLIER,
 		target_doctype="Supplier",
 		mapper_path="weclapp_sync.sync.mappers.supplier:SupplierMapper",
+		sort="id",
 	)
 )
 
@@ -125,6 +133,7 @@ register(
 		weclapp_doctype=WeClappDocType.ARTICLE,
 		target_doctype="Item",
 		mapper_path="weclapp_sync.sync.mappers.article:ArticleMapper",
+		sort="id",
 	)
 )
 
@@ -135,6 +144,7 @@ register(
 		weclapp_doctype=WeClappDocType.CRM_EVENT,
 		target_doctype="Communication",
 		mapper_path="weclapp_sync.sync.mappers.crm_event:CrmEventMapper",
+		sort="id",
 		depends_on=("customer", "supplier"),
 	)
 )
@@ -146,6 +156,7 @@ register(
 		weclapp_doctype=WeClappDocType.WAREHOUSE_STOCK_MOVEMENT,
 		target_doctype="Stock Entry",
 		mapper_path="weclapp_sync.sync.mappers.stock_movement:StockMovementMapper",
+		sort="id",
 		depends_on=("article",),
 	)
 )
@@ -157,6 +168,7 @@ register(
 		weclapp_doctype=WeClappDocType.QUOTATION,
 		target_doctype="Quotation",
 		mapper_path="weclapp_sync.sync.mappers.quotation:QuotationMapper",
+		sort="id",
 		depends_on=("customer", "article"),
 	)
 )
@@ -168,6 +180,7 @@ register(
 		weclapp_doctype=WeClappDocType.SALES_ORDER,
 		target_doctype="Sales Order",
 		mapper_path="weclapp_sync.sync.mappers.sales_order:SalesOrderMapper",
+		sort="id",
 		depends_on=("customer", "article", "quotation"),
 	)
 )
@@ -179,6 +192,7 @@ register(
 		weclapp_doctype=WeClappDocType.SALES_INVOICE,
 		target_doctype="Sales Invoice",
 		mapper_path="weclapp_sync.sync.mappers.sales_invoice:SalesInvoiceMapper",
+		sort="id",
 		depends_on=("customer", "article", "sales_order"),
 	)
 )
@@ -190,6 +204,7 @@ register(
 		weclapp_doctype=WeClappDocType.SHIPMENT,
 		target_doctype="Delivery Note",
 		mapper_path="weclapp_sync.sync.mappers.shipment:ShipmentMapper",
+		sort="id",
 		depends_on=("customer", "article", "sales_order"),
 	)
 )
@@ -201,6 +216,7 @@ register(
 		weclapp_doctype=WeClappDocType.PURCHASE_ORDER,
 		target_doctype="Purchase Order",
 		mapper_path="weclapp_sync.sync.mappers.purchase_order:PurchaseOrderMapper",
+		sort="id",
 		depends_on=("supplier", "article", "sales_order"),
 	)
 )
@@ -212,6 +228,7 @@ register(
 		weclapp_doctype=WeClappDocType.PURCHASE_INVOICE,
 		target_doctype="Purchase Invoice",
 		mapper_path="weclapp_sync.sync.mappers.purchase_invoice:PurchaseInvoiceMapper",
+		sort="id",
 		depends_on=("supplier", "article", "purchase_order"),
 	)
 )

@@ -28,6 +28,12 @@ from frappe.utils import now_datetime
 from weclapp_sync.sync import registry
 from weclapp_sync.sync.settings import get_client, get_object_type_row, get_settings
 
+try:
+	from rq.timeouts import JobTimeoutException
+except ImportError:  # pragma: no cover - rq ist eine Frappe-Kernabhängigkeit, sollte immer da sein
+	class JobTimeoutException(Exception):  # type: ignore[no-redef]
+		pass
+
 MODE_FULL = "Full Import"
 MODE_DELTA = "Delta Sync"
 
@@ -119,6 +125,19 @@ def sync_object_type(
 				aborted = True
 				break
 
+			try:
+				# Hook für Mapper, die eine Sammel-Abfrage statt eines Aufrufs je Datensatz
+				# machen wollen (z.B. customer.py/supplier.py: ein `party?id-in=[...]` je
+				# Seite statt einem GET pro Kunde/Lieferant, siehe _party_common.PartyCacheMixin).
+				# Fehler hier dürfen die Seite nicht abschießen - Mapper fallen dann auf ihre
+				# eigene Pro-Datensatz-Fallback-Logik zurück.
+				mapper.prepare_page(page)
+			except Exception:
+				frappe.log_error(
+					title=f"WeClapp Sync: prepare_page fehlgeschlagen ({spec.key})",
+					message=frappe.get_traceback(),
+				)
+
 			for idx, record in enumerate(page):
 				# Abbruch jetzt auch PRO DATENSATZ prüfen, nicht nur an der Seitengrenze -
 				# seit Bild-/Dokument-Downloads pro Artikel/Beleg kann eine einzelne Seite
@@ -138,6 +157,11 @@ def sync_object_type(
 						result.skipped += 1
 					else:
 						result.processed += 1
+				except JobTimeoutException:
+					# RQ-Job-Timeout NICHT als normalen Datensatz-Fehler schlucken - sonst läuft
+					# der Lauf einfach weiter, obwohl RQ ihn eigentlich beenden wollte (Bugfix
+					# 2026-09-16, siehe run_sync()). Muss bis zum Job-Runner durchgereicht werden.
+					raise
 				except Exception:
 					tb = frappe.get_traceback()
 					frappe.db.rollback(save_point=savepoint)
@@ -156,7 +180,8 @@ def sync_object_type(
 			# Nutzer hat abgebrochen: KEIN Watermark (Typ unvollständig), Fortschritt
 			# bleibt gespeichert. Signalisiert der äußeren Schleife den Stopp.
 			result.status = "aborted"
-			result.message = "Abbruch angefordert - Lauf an der Seitengrenze gestoppt"
+			# Seit 2026-09-16 wird auch pro Datensatz geprüft, nicht mehr nur an der Seitengrenze.
+			result.message = "Abbruch angefordert - Lauf gestoppt"
 			return result
 
 		if truncated:
@@ -172,6 +197,12 @@ def sync_object_type(
 		# Erfolg: Watermark setzen, Fortschritt zurücksetzen.
 		_finish_type(spec.key, run_start_ms)
 		frappe.db.commit()
+	except JobTimeoutException:
+		# Nicht als Typ-"error" verbuchen und weiterlaufen - das war der Fehler (siehe
+		# run_sync()) - durchreichen, damit der Lauf als Ganzes sauber "Failed" landet statt
+		# bis zum stuendlichen Stale-Cleaner auf "Running" haengen zu bleiben.
+		frappe.db.rollback()
+		raise
 	except Exception as e:
 		result.status = "error"
 		result.message = f"{type(e).__name__}: {e}"
@@ -192,18 +223,29 @@ def run_sync(mode: str, *, run_name: str | None = None) -> RunResult:
 	if not settings.enabled:
 		frappe.throw("WeClapp Sync ist in den Einstellungen deaktiviert.")
 
-	run = _create_run(mode) if run_name is None else frappe.get_doc("WeClapp Sync Run", run_name)
+	run = create_run(mode) if run_name is None else frappe.get_doc("WeClapp Sync Run", run_name)
 	res = RunResult(mode=mode, run_name=run.name)
 
 	client = get_client()
 	client.open()
 	try:
-		for spec in registry.iter_specs():
-			tr = sync_object_type(spec, mode=mode, run_name=run.name, client=client)
-			res.types.append(tr)
-			_append_run_type_summary(run, tr)
-			if tr.status == "aborted":
-				break
+		try:
+			for spec in registry.iter_specs():
+				tr = sync_object_type(spec, mode=mode, run_name=run.name, client=client)
+				res.types.append(tr)
+				_append_run_type_summary(run, tr)
+				if tr.status == "aborted":
+					break
+		except BaseException:
+			# Harter Abbruch (RQ-Job-Timeout, OOM, Worker-Kill, ...) - den Run NICHT auf
+			# "Running" haengen lassen (Bugfix 2026-09-16: genau das liess WC-SYNC-00031/
+			# 00203/00205 bis zum naechsten stuendlichen Stale-Cleaner-Lauf haengen, in der
+			# Zwischenzeit blockierte _has_running_run() keine neuen Laeufe UND liess bei einem
+			# Redeploy-/Timeout-Kill parallele Laeufe zu, sobald der Cleaner zuschlug). `except
+			# BaseException` bewusst, nicht nur `Exception` - RQs JobTimeoutException wird von
+			# sync_object_type() jetzt explizit durchgereicht statt geschluckt.
+			_mark_run_failed(run, res, frappe.get_traceback())
+			raise
 	finally:
 		client.close()
 
@@ -231,7 +273,13 @@ def run_delta_sync(run_name: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 # Log-/Run-Doctype-Helfer
 # ---------------------------------------------------------------------------
-def _create_run(mode: str):
+def create_run(mode: str):
+	"""Legt einen "WeClapp Sync Run" an und setzt ihn sofort auf "Running". Öffentlich (nicht
+	mehr `_create_run`), damit Aufrufer (weclapp_settings.start_full_import, scheduler.
+	enqueue_due_delta_sync) den Run-Namen schon VOR dem `frappe.enqueue()` kennen und synchron
+	auf "Running" setzen können - sonst kann in der Lücke zwischen Enqueue und tatsächlichem
+	Job-Start ein anderer Trigger `_has_running_run()` noch leer vorfinden und parallel loslegen
+	(Bugfix 2026-09-16, siehe CLAUDE.md)."""
 	doc = frappe.new_doc("WeClapp Sync Run")
 	doc.mode = mode
 	doc.status = "Running"
@@ -240,6 +288,26 @@ def _create_run(mode: str):
 	doc.insert()
 	frappe.db.commit()
 	return doc
+
+
+def _mark_run_failed(run, res: RunResult, tb: str) -> None:
+	"""Sicherheitsnetz für run_sync(): ein harter Abbruch (Timeout/Kill) mitten im Lauf setzt
+	den Status sofort auf "Failed" statt ihn auf "Running" haengen zu lassen."""
+	try:
+		run.reload()
+	except Exception:
+		pass
+	run.status = "Failed"
+	run.finished_at = now_datetime()
+	run.records_processed = res.total_processed
+	run.records_failed = res.total_failed
+	run.flags.ignore_permissions = True
+	try:
+		run.save()
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(title=f"WeClapp Sync: Run {run.name} konnte nicht als Failed markiert werden", message=frappe.get_traceback())
+	frappe.log_error(title=f"WeClapp Sync: Lauf {run.name} hart abgebrochen", message=tb)
 
 
 def _finish_run(run, res: RunResult) -> None:
@@ -325,6 +393,13 @@ def _save_progress(key: str, run_name: str, page_no: int) -> None:
 		{"progress_run": run_name, "progress_page": page_no},
 		update_modified=False,
 	)
+	# Heartbeat (Bugfix 2026-09-16): scheduler.recover_stale_runs() prueft
+	# "WeClapp Sync Run".modified - das Run-Doc selbst wird sonst nur am Typ-ENDE angefasst
+	# (_append_run_type_summary). Ein einzelner Objekttyp > 1h (z.B. article mit vielen
+	# Bild-Downloads) wuerde den Run sonst faelschlich mitten im Lauf als "stale" markieren,
+	# obwohl er noch aktiv Seiten verarbeitet - _has_running_run() saehe ihn dann faelschlich
+	# nicht mehr als laufend, ein Scheduler-Tick koennte parallel einen Delta-Sync anstossen.
+	frappe.db.set_value("WeClapp Sync Run", run_name, "modified", now_datetime(), update_modified=False)
 
 
 def _finish_type(key: str, watermark_ms: int) -> None:

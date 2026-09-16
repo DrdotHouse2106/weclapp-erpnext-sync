@@ -6,7 +6,7 @@ frappe.ui.form.on("WeClapp Sync Run", {
 		if (frm.doc.status === "Running" && !frm.doc.abort_requested) {
 			frm.add_custom_button(__("Abbruch anfordern"), () => {
 				frappe.confirm(
-					__("Lauf an der nächsten Seitengrenze stoppen? Bereits importierte Datensätze bleiben erhalten."),
+					__("Lauf in Kürze stoppen? Bereits importierte Datensätze bleiben erhalten."),
 					() => {
 						frappe.db
 							.set_value("WeClapp Sync Run", frm.doc.name, "abort_requested", 1)
@@ -24,7 +24,7 @@ frappe.ui.form.on("WeClapp Sync Run", {
 
 		if (frm.doc.status === "Running" && frm.doc.abort_requested) {
 			frm.dashboard.set_headline(
-				__("Abbruch angefordert - der Lauf stoppt an der nächsten Seitengrenze."),
+				__("Abbruch angefordert - der Lauf stoppt in Kürze (wird jetzt pro Datensatz geprüft)."),
 			);
 		}
 	},
