@@ -70,7 +70,7 @@ from weclapp_sync.sync.mappers._transaction import _line_title, resolve_line_ite
 
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.sync.mappers import _custom_attributes as ca
-from weclapp_sync.sync.mappers.base import Mapper
+from weclapp_sync.sync.mappers.base import Mapper, guarded_step
 from weclapp_sync.sync.settings import get_settings, price_list_mapping
 
 
@@ -128,9 +128,18 @@ class ArticleMapper(Mapper):
 			"lead_time_days": record.get("procurementLeadDays") or 0,
 			"wc_average_delivery_time": record.get("averageDeliveryTime") or None,
 		}
-		# description/item_group nur bei Neuanlage - können später von anderen Integrationen
-		# (Shopware) mitgepflegt werden (siehe reference article_migration.py).
-		if is_new:
+		# description/item_group nur bei Neuanlage überschreiben - können später von anderen
+		# Integrationen (Shopware) mitgepflegt werden (siehe reference article_migration.py).
+		# **Bugfix 2026-09-16:** ein Beleg-Mapper kann VOR dem eigentlichen Artikel-Sync schon
+		# ein Minimal-Stub-Item anlegen (`_transaction.resolve_line_item()`, `wc_id` aus
+		# `articleId` gesetzt) - der findet es über `wc_id` dann als "existing", `is_new` war
+		# also False, obwohl der Artikel hier zum ersten Mal seine echten WeClapp-Daten bekommt.
+		# `description`/`item_group` blieben dadurch für immer auf dem Stub-Platzhalter stehen.
+		# Zusätzliches Kriterium: unverändert seit Anlage (creation == modified) heißt, seither
+		# hat weder ein Sync-Lauf noch Shopware noch ein Mensch das Item angefasst - dann darf
+		# der jetzt eintreffende echte Artikel-Datensatz die Felder einmalig befüllen.
+		untouched_since_creation = existing is not None and existing.creation == existing.modified
+		if is_new or untouched_since_creation:
 			fields["description"] = record.get("description") or record.get("name")
 			fields["item_group"] = h.ensure_item_group(self._category_name(record))
 
@@ -184,11 +193,14 @@ class ArticleMapper(Mapper):
 		# komplett zunichtegemacht, inkl. `modified` eingefroren - kein einziges Kernfeld/Bild
 		# kam je an, obwohl der Vollimport "ok" meldete (der einzelne Datensatz-Fehlschlag wird
 		# pro Datensatz gezählt, nicht als Lauf-Abbruch).
-		for step in (self._sync_prices, self._sync_product_bundle, self._attach_images):
-			try:
-				step(name, record)
-			except Exception:
-				frappe.log_error(title=f"WeClapp Artikel-Nachlauf: {step.__name__}", message=frappe.get_traceback())
+		# **Bugfix 2026-09-16:** die erste Version davon lief in einem blossen try/except OHNE
+		# Savepoint - `_sync_prices()` löscht z.B. erst alle Item Prices und legt sie dann neu
+		# an; scheiterte der Neuaufbau, blieben die Löschungen stehen (Artikel ohne Preise,
+		# trotzdem "processed"). `guarded_step()` (base.py) macht jeden Schritt jetzt per
+		# Savepoint atomar - dasselbe Muster wie in customer.py/supplier.py.
+		guarded_step("Preise", name, lambda: self._sync_prices(name, record))
+		guarded_step("Product Bundle", name, lambda: self._sync_product_bundle(name, record))
+		guarded_step("Bilder", name, lambda: self._attach_images(name, record))
 		return name
 
 	def _attach_images(self, item_code: str, record: dict) -> None:

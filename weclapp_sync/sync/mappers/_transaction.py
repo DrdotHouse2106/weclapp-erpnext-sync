@@ -22,7 +22,8 @@ from weclapp_sync.sync.settings import get_settings, tax_mapping
 
 class TransactionMapper(Mapper):
 	"""Basis für Belegs-Mapper. Unterklassen setzen `target_doctype`, `items_field`
-	(WeClapp-Feldname der Positionsliste) und implementieren `header_fields()`."""
+	(WeClapp-Feldname der Positionsliste) und implementieren `upsert()`/`to_doc_fields()`
+	unter Nutzung von `build_lines()`/`build_tax_rows()`/`currency_fields()` unten."""
 
 	items_field: str = ""
 

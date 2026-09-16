@@ -277,6 +277,49 @@ def upsert_bank_account(
 	return doc.name
 
 
+class PartyCacheMixin:
+	"""Batched `party`-Objekt-Abruf für Kunde/Lieferant (customer.py/supplier.py).
+
+	**Bugfix 2026-09-16:** vorher ein WeClapp-GET pro Datensatz (`party/id/<id>`) - bei einem
+	Vollimport 5.845 + 396 Einzelaufrufe, nur für interne Notiz/Debitor-Kreditor-Nr./Belegart-
+	E-Mails. Jetzt eine Sammel-Abfrage je Seite (`prepare_page()`, von der Engine vor der
+	Datensatz-Schleife aufgerufen, siehe base.Mapper.prepare_page) über `party?id-in=[...]` -
+	live verifiziert: die `-in`-Filtersyntax braucht ein literales `[a,b,c]`, weder eine
+	Komma-Liste noch wiederholte Query-Parameter funktionieren. Reduziert ~6.200 Aufrufe auf
+	~60 (ein Aufruf je Seite à 100). `_party()` fällt auf ein einzelnes GET zurück, falls eine
+	ID aus der Sammel-Abfrage fehlt (z.B. Resume mitten in einer Seite) oder die Sammel-Abfrage
+	selbst fehlschlug - kein Datensatz bleibt dadurch ohne party-Daten."""
+
+	def __init__(self) -> None:
+		super().__init__()
+		self._party_by_id: dict[str, dict] = {}
+
+	def prepare_page(self, records: list[dict]) -> None:
+		self._party_by_id = {}
+		ids = [str(r["id"]) for r in records if r.get("id")]
+		if not ids or self.client is None:
+			return
+		try:
+			for p in self.client.iter_all("party", filters={"id-in": "[" + ",".join(ids) + "]"}):
+				if p.get("id"):
+					self._party_by_id[str(p["id"])] = p
+		except Exception:
+			self._party_by_id = {}
+
+	def _party(self, record: dict) -> dict:
+		wc_id = str(record.get("id") or "")
+		if wc_id in self._party_by_id:
+			return self._party_by_id[wc_id]
+		party: dict = {}
+		if wc_id and self.client is not None:
+			try:
+				party = self.client.get("party", wc_id) or {}
+			except Exception:
+				party = {}
+		self._party_by_id[wc_id] = party
+		return party
+
+
 def build_self_contact(wc_party: dict, display_name: str, is_company: bool) -> dict | None:
 	""""self"-Kontakt aus den Kontaktdaten der Partei selbst (PERSON-Kunden haben keinen
 	separaten contacts[]-Eintrag; manche Firmen ebenfalls nicht). Siehe

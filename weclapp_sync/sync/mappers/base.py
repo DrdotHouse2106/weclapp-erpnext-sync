@@ -15,9 +15,34 @@ Idempotenz-Prinzip (aus dem Vorgängerprojekt, unbedingt beibehalten):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import frappe
+
+
+def guarded_step(step_name: str, subject_id: str, fn: Callable[[], Any]) -> Any:
+	"""Führt `fn()` in einem eigenen Savepoint aus - schlägt sie fehl, wird NUR ihr Teil
+	zurückgerollt und geloggt, der Rest des schon gespeicherten Datensatzes bleibt unberührt.
+
+	**Bugfix 2026-09-16:** `article.py`s Nachlauf-Schritte (Preise/Product Bundle/Bilder) liefen
+	bisher in einem blossen try/except OHNE Savepoint - `_sync_prices()` löscht z.B. erst alle
+	Item Prices und legt sie dann neu an; scheiterte der Neuaufbau, blieben die Löschungen
+	stehen und der Artikel stand ohne Preise da, obwohl er als "processed" zählte.
+	`customer.py`/`supplier.py` hatten dasselbe Muster (mit Savepoint) schon vorher als lokal
+	duplizierte `_guarded()`-Funktion - hier zentral zusammengeführt, damit es nur einmal
+	gepflegt werden muss."""
+	sp = f"wcstep_{abs(hash((step_name, subject_id)))}"
+	frappe.db.savepoint(sp)
+	try:
+		return fn()
+	except Exception:
+		frappe.db.rollback(save_point=sp)
+		frappe.log_error(
+			title=f"WeClapp Sync: {step_name} für {subject_id} fehlgeschlagen",
+			message=frappe.get_traceback(),
+		)
+		return None
 
 
 class Mapper:
@@ -74,6 +99,16 @@ class Mapper:
 		`existing` ist das bereits vorhandene Dokument (bei Update) bzw. None (bei Neuanlage) -
 		nützlich, um bestimmte Felder bei Updates nicht zu überschreiben."""
 		raise NotImplementedError
+
+	# --------------------------------------------------------------- Seiten-Hook
+	def prepare_page(self, records: list[dict]) -> None:
+		"""Wird einmal je Seite VOR der Datensatz-Schleife aufgerufen (siehe engine.py). Für
+		Mapper, die eine Sammel-Abfrage statt eines Aufrufs je Datensatz machen wollen - z.B.
+		`_party_common.PartyCacheMixin`: ein `party?id-in=[...]` je Seite statt einem GET pro
+		Kunde/Lieferant (Bugfix 2026-09-16: vorher ~6.200 Einzelaufrufe/Vollimport statt ~60).
+		Standard: nichts. Ein Fehler hier darf die Seite nicht abschiessen - wird von der Engine
+		abgefangen, Mapper sollten dafür einen Pro-Datensatz-Fallback haben."""
+		return None
 
 	# --------------------------------------------------------------- gemeinsame Logik
 	def should_skip(self, record: dict) -> bool:

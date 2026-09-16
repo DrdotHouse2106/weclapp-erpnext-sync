@@ -20,16 +20,18 @@ Bankkonten -> ERPNext Bank Account. Personenkonto (Debitorenkonto) je Kunde -> C
 landen auf dem Sammelkonto).
 
 Noch NICHT portiert (jeweils eigener Folge-Schritt, siehe CLAUDE.md):
-- Custom Attributes (Zusatzfelder) - braucht customAttributeDefinition-Abruf
-- WeClapp-Dokumente (Anhänge) hochladen
-- WeClapp-Kommentare ("Kommentare", separater Endpunkt pro party-id)
+- Dateianhänge AM Kunden/der Partei selbst (WeClapp `document`-Entität für `party`/`customer`) -
+  nicht zu verwechseln mit den längst gebauten Beleg-/Artikel-Anhängen (_attachments.py)
+- WeClapp-Kommentare ("Kommentare", separater Endpunkt pro party-id) - live geprüft, in den
+  echten Daten praktisch ungenutzt (0 von 30 Stichproben), daher niedrige Priorität
 - blocked/insolvent -> disabled/is_frozen (Schlussphase apply_wc_blocks)
+
+(Custom Attributes/Zusatzfelder sind entgegen einer älteren Version dieses Docstrings längst
+angebunden, siehe `ca.resolve()` unten und `setup/custom_attribute_fields.py`.)
 """
 
 from __future__ import annotations
 
-import traceback
-from collections.abc import Callable
 from typing import Any
 
 import frappe
@@ -37,34 +39,14 @@ import frappe
 from weclapp_sync import erpnext_helpers as h
 from weclapp_sync.sync.mappers import _custom_attributes as ca
 from weclapp_sync.sync.mappers import _party_common as pc
-from weclapp_sync.sync.mappers.base import Mapper
+from weclapp_sync.sync.mappers.base import Mapper, guarded_step
 from weclapp_sync.sync.settings import get_settings
 
 _PARTY_DOCTYPE = "Customer"
 
 
-def _guarded(child_doctype: str, party_name: str, wc_obj: dict, fn: Callable[[], Any]) -> Any:
-	"""Führt eine Sub-Entitäts-Upsert-Funktion in einem eigenen Savepoint aus. Bei Fehler:
-	Rollback nur dieses Teils + Log, Rückgabe None - der Kunde selbst bleibt erhalten."""
-	sp = f"wcsub_{abs(hash((child_doctype, str(wc_obj.get('id')))))}"
-	frappe.db.savepoint(sp)
-	try:
-		return fn()
-	except Exception:
-		frappe.db.rollback(save_point=sp)
-		frappe.log_error(
-			title=f"WeClapp Sync: {child_doctype} für {party_name} fehlgeschlagen",
-			message=f"WeClapp {child_doctype} id={wc_obj.get('id')}\n\n{traceback.format_exc()}",
-		)
-		return None
-
-
-class CustomerMapper(Mapper):
+class CustomerMapper(pc.PartyCacheMixin, Mapper):
 	target_doctype = "Customer"
-
-	def __init__(self) -> None:
-		super().__init__()
-		self._party_cache: tuple[str, dict] | None = None
 
 	# ------------------------------------------------------------------ Basis
 	def should_skip(self, record: dict) -> bool:
@@ -73,20 +55,8 @@ class CustomerMapper(Mapper):
 	def target_name(self, record: dict) -> str | None:
 		return record.get("customerNumber") or None
 
-	def _party(self, record: dict) -> dict:
-		"""Das WeClapp-party-Objekt zum Kunden (customer.id == party.id). Einmal pro Datensatz
-		geladen (kleiner Ein-Slot-Cache). Bei fehlendem Client / Fehler: leeres dict."""
-		wc_id = str(record.get("id") or "")
-		if self._party_cache and self._party_cache[0] == wc_id:
-			return self._party_cache[1]
-		party: dict = {}
-		if wc_id and self.client is not None:
-			try:
-				party = self.client.get("party", wc_id) or {}
-			except Exception:
-				party = {}
-		self._party_cache = (wc_id, party)
-		return party
+	# `_party()`/`prepare_page()` kommen aus pc.PartyCacheMixin (Bugfix 2026-09-16: gebündelter
+	# Sammel-Abruf je Seite statt einem WeClapp-GET pro Kunde, siehe dort).
 
 	def to_doc_fields(self, record: dict, *, existing: Any = None) -> dict[str, Any]:
 		settings = get_settings()
@@ -155,7 +125,7 @@ class CustomerMapper(Mapper):
 		# 2) Adressen - ein Fehler bei einer Adresse darf den Kunden nicht scheitern lassen
 		#    (eigener Savepoint, damit ein Teil-Write sauber zurückgerollt wird).
 		for wc_addr in record.get("addresses") or []:
-			res = _guarded("Address", name, wc_addr, lambda a=wc_addr: pc.upsert_address(
+			res = guarded_step("Address", f"{name}:{wc_addr.get('id')}", lambda a=wc_addr: pc.upsert_address(
 				a,
 				party_doctype=_PARTY_DOCTYPE,
 				party_name=name,
@@ -168,7 +138,7 @@ class CustomerMapper(Mapper):
 		# 3) Kontakte
 		for wc_contact in record.get("contacts") or []:
 			is_primary = record.get("primaryContactId") == wc_contact.get("id")
-			res = _guarded("Contact", name, wc_contact, lambda c=wc_contact, p=is_primary: pc.upsert_contact(
+			res = guarded_step("Contact", f"{name}:{wc_contact.get('id')}", lambda c=wc_contact, p=is_primary: pc.upsert_contact(
 				c, party_doctype=_PARTY_DOCTYPE, party_name=name, is_primary=p
 			))
 			if not res:
@@ -185,7 +155,7 @@ class CustomerMapper(Mapper):
 		if primary_contact is None:
 			self_data = pc.build_self_contact(record, display_name, is_company)
 			if self_data:
-				primary_contact = _guarded("Contact", name, self_data, lambda: pc.upsert_contact(
+				primary_contact = guarded_step("Contact", f"{name}:self", lambda: pc.upsert_contact(
 					self_data,
 					party_doctype=_PARTY_DOCTYPE,
 					party_name=name,
@@ -195,7 +165,7 @@ class CustomerMapper(Mapper):
 
 		# 5) Bankkonten
 		for wc_ba in record.get("bankAccounts") or []:
-			_guarded("Bank Account", name, wc_ba, lambda b=wc_ba: pc.upsert_bank_account(
+			guarded_step("Bank Account", f"{name}:{wc_ba.get('id')}", lambda b=wc_ba: pc.upsert_bank_account(
 				b, party_doctype=_PARTY_DOCTYPE, party_name=name, account_type="Kunden-Bankkonto"
 			))
 
@@ -204,7 +174,7 @@ class CustomerMapper(Mapper):
 		debtor_number = party.get("customerDebtorAccountNumber")
 		if debtor_number:
 			label = (party.get("company") or display_name).strip()
-			account_name = _guarded("Account", name, {"id": debtor_number}, lambda: h.ensure_personal_account(
+			account_name = guarded_step("Account", f"{name}:{debtor_number}", lambda: h.ensure_personal_account(
 				number=debtor_number,
 				label=label,
 				account_type="Receivable",
