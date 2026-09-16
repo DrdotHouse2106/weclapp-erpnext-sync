@@ -60,6 +60,23 @@ frappe.ui.form.on("WeClapp Settings", {
 		);
 	},
 
+	import_used_ledger_accounts(frm) {
+		frappe.confirm(
+			__("WeClapps komplette Buchungshistorie (aktuell ca. 21.000 Belege) nach je genutzten Sachkonten durchsuchen und die in ERPNext fehlenden anlegen? Kann je nach Datenmenge einige Minuten dauern."),
+			() => {
+				frm.call({
+					doc: frm.doc,
+					method: "import_used_ledger_accounts",
+					freeze: true,
+					freeze_message: __("Durchsuche Buchungen und lege Konten an …"),
+				}).then((r) => {
+					frm.reload_doc();
+					frappe.msgprint({ title: __("Kontenplan"), message: (r.message || "").replace(/\n/g, "<br>"), indicator: "green" });
+				});
+			}
+		);
+	},
+
 	create_missing_ledger_accounts(frm) {
 		frappe.confirm(
 			__("Die oben eingetragenen Kontonummern aus WeClapps Kontenrahmen im ERPNext-Kontenplan anlegen? Nur Konten, für die schon ein Geschwisterkonto existiert."),

@@ -285,123 +285,88 @@ class WeClappSettings(Document):
 		out += "\n\nJetzt 'Steuer-Mapping aus WeClapp befuellen' erneut klicken."
 		return out
 
-	@frappe.whitelist()
-	def create_missing_ledger_accounts(self):
-		"""Legt GEZIELT die in `ledger_account_numbers` eingetragenen, in ERPNext fehlenden
-		Sachkonten aus WeClapps `ledgerAccount`-Entität an (nicht zu verwechseln mit
-		`create_missing_tax_accounts()`, das nur die von Steuern referenzierten Konten kennt).
+	# ------------------------------------------------------------------ Kontenanlage aus WeClapp
+	# Geteilte Bausteine für create_missing_ledger_accounts() (gezielt) UND
+	# import_used_ledger_accounts() (Massen-Scan "jemals gebucht") - siehe deren Docstrings für
+	# die Vorgeschichte (2026-09-16, Cross-Session-Anfrage von versand_integration).
 
-		Nutzer-Anfrage 2026-09-16 (über eine parallele Session, `versand_integration`, die für
-		die Portokasse-Journalbuchungen ein Konto brauchte): "1030 Portokasse"/"1270 N26"
-		existieren in WeClapp, fehlten aber in ERPNext.
-
-		**Bewusst KEIN automatischer Vollabgleich des gesamten WeClapp-Kontenrahmens** - live
-		geprüft (2026-09-16): WeClapps `ledgerAccount` hat **7739 Einträge**, das komplette
-		generische SKR03-Vorlagenschema, nicht nur die von FranceTec tatsächlich genutzten
-		Konten. Ein erster Entwurf dieser Funktion (Geschwisterkonto-Heuristik über alle
-		fehlenden Konten) hätte im Probelauf **726 größtenteils irrelevante Vorlagen-Konten**
-		angelegt (z.B. "0010 Konzessionen und gewerbl. Schutzrechte", diverse Gebäude-/Anlagen-
-		Unterkategorien, nur weil zufällig ein Geschwisterkonto schon existierte). Stattdessen
-		nur die vom Nutzer explizit eingetragenen Nummern - für jede weitere zukünftig
-		gebrauchte Nummer trägt man sie hier ein und klickt erneut.
-
-		Nur echte Sachkonten (numerische `accountNumber`, `type=IMPERSONAL_ACCOUNT`) - WeClapps
-		eigene Gruppen-Knoten (alphanumerische Codes wie "B1660") werden NICHT als eigene
-		ERPNext-Gruppen angelegt, weil ERPNexts Kontenplan (SKR03-Import) eine eigene,
-		andersartige Gruppenstruktur mit sprechenden statt WeClapp-internen Namen hat (live
-		geprüft: ERPNext-Konto "1000 - Kasse - FT" hat keinen `account_number` an seiner
-		Gruppe "Kasse - FT", WeClapp führt dieselbe Gruppe unter dem Code "B1660").
-
-		**Parent-Auflösung:** für jedes angeforderte Konto wird über WeClapps eigene
-		Eltern-Beziehung (`parentAccountId`) nach einem GESCHWISTERKONTO gesucht, das in
-		ERPNext schon existiert - dessen ERPNext-`parent_account`/`account_type` werden
-		übernommen. Kein Konto wird geraten platziert: ohne ein bereits vorhandenes
-		Geschwisterkonto wird übersprungen (Rückmeldung listet das für die manuelle Anlage)."""
-		if not self.company:
-			frappe.throw("Bitte zuerst die Company setzen.")
-
-		numbers = [
-			n.strip()
-			for n in (self.ledger_account_numbers or "").replace(",", "\n").splitlines()
-			if n.strip()
-		]
-		if not numbers:
-			frappe.throw(
-				'Bitte oben unter "Kontonummern" mindestens eine WeClapp-Kontonummer eintragen '
-				"(z.B. 1030, 1270)."
-			)
-
+	def _ledger_reference(self):
+		"""Lädt WeClapps kompletten Kontenrahmen (`ledgerAccount`, ~7739 Zeilen, nur 5 schmale
+		Felder - ca. 1-2 MB, einmalig für die Dauer eines Button-Klicks im Speicher, wie schon
+		die kleineren Referenzlisten in populate_tax_mapping()/populate_custom_attribute_mapping()
+		- NICHT Teil des laufenden Datensatz-Syncs, wo Vollmaterialisierung tabu ist). Rückgabe:
+		(accountNumber -> Datensatz, parentAccountId -> [Kind-Datensätze])."""
 		from weclapp_sync.sync.settings import get_client
 
 		client = get_client()
 		client.open()
 		try:
-			# Gezielt per Filter geholt, NICHT die ganze 7739-Zeilen-Liste - siehe Docstring.
-			wanted = list(
-				client.iter_all("ledgerAccount", filters={"accountNumber-in": "[" + ",".join(numbers) + "]"})
+			ledger = list(
+				client.iter_all(
+					"ledgerAccount", properties="id,accountNumber,type,description,parentAccountId"
+				)
 			)
-			# Für die Geschwister-Suche brauchen wir zusätzlich alle direkten Geschwister jedes
-			# angeforderten Kontos (gleicher parentAccountId) - ein zweiter, ebenfalls
-			# eingegrenzter Abruf pro betroffenem Elternknoten statt der vollen Liste.
-			parent_ids = {a.get("parentAccountId") for a in wanted if a.get("parentAccountId")}
-			siblings: list[dict] = []
-			for pid in parent_ids:
-				siblings.extend(client.iter_all("ledgerAccount", filters={"parentAccountId-eq": pid}))
 		finally:
 			client.close()
+		by_number = {a["accountNumber"]: a for a in ledger if a.get("accountNumber")}
+		by_parent: dict[str, list[dict]] = {}
+		for a in ledger:
+			by_parent.setdefault(a.get("parentAccountId"), []).append(a)
+		return by_number, by_parent
 
-		by_number = {a["accountNumber"]: a for a in wanted if a.get("accountNumber")}
+	def _erpnext_sibling(self, acc: dict, by_parent: dict):
+		"""Geschwisterkonto (gleicher WeClapp-Elternknoten) in ERPNext - nur eindeutig, wenn
+		ALLE in ERPNext gefundenen Geschwister derselben Gruppe zugeordnet sind.
+
+		**Bugfix 2026-09-16 (im Probelauf entdeckt, vor dem Ausliefern):** eine erste Version
+		nahm einfach das ERSTE gefundene Geschwisterkonto - WeClapps Gruppe "B1660"
+		("Kassenbestand ... Guthaben bei Kreditinstituten") bündelt aber live Kasse, Postbank,
+		PayPal, Amazon Pay, SumUp, eBay etc. in EINER Gruppe, während ERPNext das auf mehrere
+		Untergruppen aufteilt ("Kasse - FT" vs. "Bank - FT" vs. ...) - "1270 N26" (ein
+		Bankkonto) wäre damit fälschlich unter "Kasse - FT"/`account_type "Cash"` gelandet, nur
+		weil "1000 Kasse" zufällig zuerst in der Geschwisterliste stand. Bei Uneinigkeit unter
+		den gefundenen Geschwistern wird jetzt NICHT geraten, sondern als mehrdeutig
+		übersprungen (Rückmeldung nennt die widersprüchlichen Gruppen)."""
+		matches = []
+		for other in by_parent.get(acc.get("parentAccountId"), []):
+			num = other.get("accountNumber") or ""
+			if not num.isdigit() or num == acc.get("accountNumber"):
+				continue
+			row = frappe.db.get_value(
+				"Account",
+				{"account_number": num, "company": self.company},
+				["name", "parent_account", "account_type"],
+				as_dict=True,
+			)
+			if row:
+				matches.append(row)
+		if not matches:
+			return None, "kein Geschwisterkonto in ERPNext gefunden"
+		parents = sorted({m.parent_account for m in matches})
+		if len(parents) > 1:
+			return None, f"mehrdeutig - Geschwisterkonten liegen in ERPNext unter verschiedenen Gruppen ({', '.join(parents)}), bitte manuell anlegen"
+		return matches[0], None
+
+	def _create_ledger_accounts(self, accounts: list[dict], by_parent: dict) -> str:
+		"""Legt die übergebenen WeClapp-`ledgerAccount`-Datensätze in ERPNext an, wo möglich.
+		Nur echte Sachkonten (numerische `accountNumber`, `type=IMPERSONAL_ACCOUNT`) - WeClapps
+		eigene Gruppen-Knoten (alphanumerische Codes wie "B1660") werden NICHT als eigene
+		ERPNext-Gruppen angelegt, weil ERPNexts Kontenplan (SKR03-Import) eine eigene,
+		andersartige Gruppenstruktur mit sprechenden statt WeClapp-internen Namen hat (live
+		geprüft: ERPNext-Konto "1000 - Kasse - FT" hat keinen `account_number` an seiner Gruppe
+		"Kasse - FT", WeClapp führt dieselbe Gruppe unter dem Code "B1660")."""
 		existing_numbers = set(
 			frappe.get_all("Account", filters={"company": self.company}, pluck="account_number")
 		)
-
-		def _erpnext_sibling(acc: dict):
-			"""Geschwisterkonto (gleicher WeClapp-Elternknoten) in ERPNext - nur eindeutig, wenn
-			ALLE in ERPNext gefundenen Geschwister derselben Gruppe zugeordnet sind.
-
-			**Bugfix 2026-09-16 (im Probelauf entdeckt, vor dem Ausliefern):** eine erste Version
-			nahm einfach das ERSTE gefundene Geschwisterkonto - WeClapps Gruppe "B1660"
-			("Kassenbestand ... Guthaben bei Kreditinstituten") bündelt aber live Kasse, Postbank,
-			PayPal, Amazon Pay, SumUp, eBay etc. in EINER Gruppe, während ERPNext das auf
-			mehrere Untergruppen aufteilt ("Kasse - FT" vs. "Bank - FT" vs. ...) - "1270 N26"
-			(ein Bankkonto) wäre damit fälschlich unter "Kasse - FT"/`account_type "Cash"`
-			gelandet, nur weil "1000 Kasse" zufällig zuerst in der Geschwisterliste stand. Bei
-			Uneinigkeit unter den gefundenen Geschwistern wird jetzt NICHT geraten, sondern als
-			mehrdeutig übersprungen (Rückmeldung nennt die widersprüchlichen Gruppen)."""
-			wc_parent_id = acc.get("parentAccountId")
-			matches = []
-			for other in siblings:
-				num = other.get("accountNumber") or ""
-				if not num.isdigit() or num == acc["accountNumber"] or other.get("parentAccountId") != wc_parent_id:
-					continue
-				row = frappe.db.get_value(
-					"Account",
-					{"account_number": num, "company": self.company},
-					["name", "parent_account", "account_type"],
-					as_dict=True,
-				)
-				if row:
-					matches.append(row)
-			if not matches:
-				return None, "kein Geschwisterkonto in ERPNext gefunden"
-			parents = sorted({m.parent_account for m in matches})
-			if len(parents) > 1:
-				return None, f"mehrdeutig - Geschwisterkonten liegen in ERPNext unter verschiedenen Gruppen ({', '.join(parents)}), bitte manuell anlegen"
-			return matches[0], None
-
 		created, skipped = [], []
-		for num in numbers:
+		for acc in sorted(accounts, key=lambda a: a.get("accountNumber") or ""):
+			num = acc.get("accountNumber") or ""
 			if num in existing_numbers:
-				skipped.append(f"{num} - existiert schon")
-				continue
-			acc = by_number.get(num)
-			if not acc:
-				skipped.append(f"{num} - in WeClapp nicht gefunden")
 				continue
 			if acc.get("type") != "IMPERSONAL_ACCOUNT" or not num.isdigit():
 				skipped.append(f"{num} ({acc.get('description')}) - kein normales Sachkonto")
 				continue
-			sibling, reason = _erpnext_sibling(acc)
+			sibling, reason = self._erpnext_sibling(acc, by_parent)
 			if not sibling:
 				skipped.append(f"{num} ({acc.get('description')}) - {reason}")
 				continue
@@ -416,6 +381,7 @@ class WeClappSettings(Document):
 				doc.flags.ignore_permissions = True
 				doc.insert()
 				created.append(doc.name)
+				existing_numbers.add(num)
 			except Exception as e:
 				skipped.append(f"{num} ({acc.get('description')}): {e}")
 
@@ -426,6 +392,95 @@ class WeClappSettings(Document):
 		if skipped:
 			out += f"\n\nÜbersprungen ({len(skipped)}):\n" + "\n".join(skipped)
 		return out
+
+	@frappe.whitelist()
+	def create_missing_ledger_accounts(self):
+		"""Legt GEZIELT die in `ledger_account_numbers` eingetragenen, in ERPNext fehlenden
+		Sachkonten aus WeClapps `ledgerAccount`-Entität an (nicht zu verwechseln mit
+		`create_missing_tax_accounts()`, das nur die von Steuern referenzierten Konten kennt).
+		Für einzelne, konkret gebrauchte Konten, die WeClapp noch nie tatsächlich bebucht hat
+		(sonst würde `import_used_ledger_accounts()` unten reichen) - z.B. ein neues Bankkonto,
+		das gerade erst eingerichtet wird.
+
+		Nutzer-Anfrage 2026-09-16 (über eine parallele Session, `versand_integration`, die für
+		die Portokasse-Journalbuchungen ein Konto brauchte): "1030 Portokasse"/"1270 N26"
+		existieren in WeClapp, fehlten aber in ERPNext."""
+		if not self.company:
+			frappe.throw("Bitte zuerst die Company setzen.")
+
+		numbers = [
+			n.strip()
+			for n in (self.ledger_account_numbers or "").replace(",", "\n").splitlines()
+			if n.strip()
+		]
+		if not numbers:
+			frappe.throw(
+				'Bitte oben unter "Kontonummern" mindestens eine WeClapp-Kontonummer eintragen '
+				"(z.B. 1030, 1270)."
+			)
+
+		by_number, by_parent = self._ledger_reference()
+		accounts = []
+		for num in numbers:
+			acc = by_number.get(num)
+			if acc:
+				accounts.append(acc)
+			else:
+				accounts.append({"accountNumber": num, "type": None, "description": None})
+		return self._create_ledger_accounts(accounts, by_parent)
+
+	@frappe.whitelist()
+	def import_used_ledger_accounts(self):
+		"""Scannt WeClapps `accountingTransaction` (jede tatsächliche Buchung, aktuell 20916)
+		und legt alle bisher in ERPNext fehlenden Sachkonten an, auf die JEMALS gebucht wurde.
+
+		Nutzer-Wunsch 2026-09-16, nachdem klar wurde, dass die gezielte Einzel-Eintragung
+		(`create_missing_ledger_accounts`) zu eng ist: "Genutzt werden deutlich mehr Konten...
+		importier doch alle, auf die schon jemals gebucht wurde." Präziser als WeClapps
+		kompletter Kontenrahmen (7739 generische SKR03-Vorlagenkonten, siehe dort) UND
+		umfassender als Einzel-Eintragung.
+
+		Die allermeisten in Buchungen referenzierten Konten sind `PERSONAL_ACCOUNT`
+		(Debitoren-/Kreditoren-Personenkonten je Kunde/Lieferant - live: 3274 von 3407
+		verschiedenen referenzierten Konten) - die laufen über eine ganz andere, längst
+		bestehende Anlage (`erpnext_helpers.ensure_personal_account()`, pro Kunde/Lieferant
+		beim customer.py/supplier.py-Sync) und werden hier ignoriert. Nur
+		`type == IMPERSONAL_ACCOUNT` (echte Sachkonten - live: 129, davon 70 in ERPNext
+		fehlend) wird betrachtet.
+
+		Streamt `accountingTransaction` seitenweise (Feldreduktion auf
+		`id,transactionDetails.accountId` - keine vollen Belege im Speicher) und sammelt nur
+		die referenzierten `accountId`s in einem Set, genau wie überall sonst im Sync nie die
+		volle Entität am Stück gehalten wird."""
+		if not self.company:
+			frappe.throw("Bitte zuerst die Company setzen.")
+
+		from weclapp_sync.sync.settings import get_client
+
+		_, by_parent = self._ledger_reference()
+
+		client = get_client()
+		client.open()
+		try:
+			id_to_account = {
+				a["id"]: a
+				for a in client.iter_all("ledgerAccount", properties="id,accountNumber,type,description")
+			}
+			used_ids: set[str] = set()
+			for tx in client.iter_all("accountingTransaction", properties="id,transactionDetails.accountId"):
+				for td in tx.get("transactionDetails") or []:
+					acc_id = td.get("accountId")
+					if acc_id:
+						used_ids.add(acc_id)
+		finally:
+			client.close()
+
+		accounts = [
+			id_to_account[i]
+			for i in used_ids
+			if i in id_to_account and id_to_account[i].get("type") == "IMPERSONAL_ACCOUNT"
+		]
+		return self._create_ledger_accounts(accounts, by_parent)
 
 	@frappe.whitelist()
 	def populate_price_list_mappings(self):

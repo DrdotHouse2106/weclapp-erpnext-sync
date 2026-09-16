@@ -58,6 +58,7 @@
   "debtor_parent_account",
   "creditor_parent_account",
   "ledger_accounts_help",
+  "import_used_ledger_accounts",
   "ledger_account_numbers",
   "create_missing_ledger_accounts",
   "section_tax",
@@ -390,13 +391,18 @@
   {
    "fieldname": "ledger_accounts_help",
    "fieldtype": "HTML",
-   "options": "<p class=\"text-muted\">Legt GEZIELT einzelne, in ERPNext fehlende Sachkonten aus WeClapps eigenem Kontenrahmen (z.B. SKR03) an - z.B. wenn ein Journal-Sync (andere Integration) ein Konto braucht, das in WeClapp längst existiert, in ERPNext aber noch fehlt. Bewusst kein automatischer Vollabgleich (WeClapps Kontenrahmen enthält tausende generische SKR03-Vorlagenkonten) - unten die konkret gebrauchten Kontonummern eintragen. Platziert ein neues Konto nur, wenn dafür in ERPNext schon ein Geschwisterkonto (gleiche WeClapp-Kontengruppe) existiert - sonst wird es übersprungen und in der Rückmeldung aufgelistet.</p>"
+   "options": "<p class=\"text-muted\">Legt in ERPNext fehlende Sachkonten aus WeClapps eigenem Kontenrahmen an - z.B. wenn ein Journal-Sync (andere Integration) ein Konto braucht, das in WeClapp längst existiert, in ERPNext aber noch fehlt. Bewusst KEIN automatischer Vollabgleich (WeClapps Kontenrahmen enthält 7700+ generische SKR03-Vorlagenkonten) - stattdessen unten entweder alle jemals tatsächlich bebuchten Konten importieren, oder einzelne Kontonummern gezielt eintragen. Platziert ein neues Konto jeweils nur, wenn dafür in ERPNext schon ein eindeutiges Geschwisterkonto (gleiche WeClapp-Kontengruppe) existiert - sonst wird es übersprungen und in der Rückmeldung aufgelistet.</p>"
   },
   {
-   "description": "Komma- oder zeilengetrennt, z.B. 1030, 1270",
+   "fieldname": "import_used_ledger_accounts",
+   "fieldtype": "Button",
+   "label": "Alle jemals gebuchten Konten importieren"
+  },
+  {
+   "description": "Komma- oder zeilengetrennt, z.B. 1030, 1270 - für einzelne Konten, die WeClapp noch nie tatsächlich bebucht hat (z.B. ein gerade erst eingerichtetes Bankkonto).",
    "fieldname": "ledger_account_numbers",
    "fieldtype": "Small Text",
-   "label": "Kontonummern"
+   "label": "Einzelne Kontonummern"
   },
   {
    "fieldname": "create_missing_ledger_accounts",

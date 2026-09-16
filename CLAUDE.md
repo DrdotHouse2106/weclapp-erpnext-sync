@@ -3,6 +3,58 @@
 Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
 (Konvention aus dem Ursprungsprojekt, siehe unten).
 
+### Increment 22 (2026-09-16): "Alle jemals gebuchten Konten importieren" (Ergänzung zu Increment 21)
+Nutzer lud die WeClapp-eigenen Kontenrahmen-Exporte hoch (Kontenplan_SKR03, Kontenmatrix,
+Standard-Konten, Steuerkontenzuordnung) und stellte klar: die reine Einzel-Eintragung aus
+Increment 21 ist zu eng - "Genutzt werden deutlich mehr Konten... Du könntest ja alle
+importieren auf die schon jemals gebucht wurde. Außerdem sind die meisten Konten vermutlich
+Personenkonten." Beides live bestätigt, bevor gebaut wurde:
+
+- WeClapps `accountingTransaction`-Entität (echte Buchungen, aktuell 20916 Belege) seitenweise
+  gescannt (Feldreduktion `id,transactionDetails.accountId` - keine vollen Belege im Speicher,
+  nur ein Set der referenzierten Konto-IDs). Ergebnis: **3407 verschiedene referenzierte
+  Konten**, davon **3274 `PERSONAL_ACCOUNT`** (Debitoren-/Kreditoren-Personenkonten je Kunde/
+  Lieferant - bestätigt Marcels Vermutung fast exakt) und nur **129 `IMPERSONAL_ACCOUNT`**
+  (echte Sachkonten). Von diesen 129 fehlten **70 in ERPNext** - ein echter, bisher
+  unentdeckter Bestand, weit über die zwei ursprünglich genannten Konten hinaus.
+- Neuer Button "Alle jemals gebuchten Konten importieren" (`import_used_ledger_accounts()`)
+  scannt das automatisch und legt die auflösbaren fehlenden Konten an - über dieselbe
+  eindeutigkeitsgeprüfte Geschwisterkonto-Logik aus Increment 21 (`_erpnext_sibling()`, jetzt
+  als geteilter Baustein `_ledger_reference()`/`_create_ledger_accounts()` für beide Buttons).
+- Die gezielte Einzel-Eintragung (`ledger_account_numbers` + "Diese Konten aus WeClapp
+  anlegen") bleibt als Fallback für Konten, die WeClapp noch nie tatsächlich bebucht hat (z.B.
+  ein gerade erst eingerichtetes Bankkonto wie "1270 N26" - das wird selbst vom "jemals
+  gebucht"-Scan nicht gefunden, weil eben noch nie darauf gebucht wurde).
+- **"Gruppe"-Verwirrung geklärt:** Nutzer verstand nicht, was mit "Gruppe" gemeint war. Klargestellt
+  anhand der eigenen Excel-Spalte "Übergeordnetes Konto": WeClapps `B1660` ("Kassenbestand,
+  Bundesbankguthaben, Guthaben bei Kreditinstituten und Schecks") ist selbst kein Buchungskonto,
+  sondern ein reiner Sammelordner, der in WeClapp Kasse/Postbank/PayPal/Amazon Pay/N26 etc. ALLE
+  in einem Ordner führt - ERPNext trennt das in mehrere Ordner ("Kasse - FT" vs. "Bank - FT").
+  Deshalb bleibt "1270 N26" trotz allem mehrdeutig (siehe Increment 21) und muss manuell unter
+  "Bank - FT" (`account_type "Bank"`, Muster "1100 - Postbank - FT") angelegt werden.
+- **Simulationsergebnis für alle 70 fehlenden Konten** (Logik als eigenständiges Skript
+  read-only gegen die echte Instanz nachgebaut, VOR dem echten Button-Klick verifiziert):
+  - **17 eindeutig auflösbar** (würden automatisch angelegt), z.B. 4600 Werbekosten, 2100
+    Zinsen und ähnliche Aufwendungen, 2400 Forderungsverluste, 0490 Sonstige Betriebs- u.
+    Geschäftsausstattung.
+  - **38 mehrdeutig** (übersprungen, keine Rateversuche) - darunter erwartungsgemäß alle
+    Zahlungsdienstleister-Konten (PayPal, SumUp, Zettle, Amazon Pay/Amazon, Klarna, eBay, N26 -
+    dasselbe Kasse-vs-Bank-Problem wie bei N26 oben) UND überraschend die 13 "Geldtransit
+    X-Y"-Konten (interne Umbuchungskonten zwischen Zahlungsmitteln, z.B. "Geldtransit Bank-
+    PayPal") - deren WeClapp-Geschwister liegen in ERPNext an völlig verstreuten Stellen
+    (Abziehbare Vorsteuer, Steuerguthaben, Forderungen...), vermutlich eine WeClapp-interne
+    Sonderstruktur, die sich nicht sinnvoll automatisch auflösen lässt.
+  - **15 ganz ohne Geschwisterkonto** (weder das Konto noch ein direktes Geschwister existiert
+    bisher in ERPNext) - u.a. diverse Kreditkarten-/Darlehenskonten (Iwoca, Klarna, LBB,
+    Barclays, Targobank, Deutsche Leasing) und 4730 Ausgangsfrachten/4710 Verpackungsmaterial.
+  - Fazit: die Sicherheitslogik funktioniert wie gewollt (kein Rateversuch bei den 53
+    mehrdeutigen/unauflösbaren Fällen), deckt aber nur gut ein Viertel automatisch ab - der Rest
+    bleibt bewusst für eine manuelle, fachliche Entscheidung liegen (Rückmeldetext listet alle
+    mit Grund).
+  - **Noch nicht über den echten Button in ERPNext ausgelöst** (nur die Logik simuliert) - der
+    erste echte Klick sollte also ca. 17 Konten anlegen und die 53 anderen in der Rückmeldung
+    auflisten.
+
 ### Increment 21 (2026-09-16): Gezielte Kontenanlage aus WeClapps Kontenrahmen (Cross-Session)
 Auslöser: eine parallele Claude-Session (`versand_integration`, DHL/DPD/Deutsche-Post-Anbindung)
 brauchte für Portokasse-Journalbuchungen ein ERPNext-Konto und fragte per Cross-Session-Nachricht
