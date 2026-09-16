@@ -371,7 +371,9 @@ class WeClappSettings(Document):
 
 	@frappe.whitelist()
 	def start_full_import(self):
-		"""Enqueued den Vollimport als langlaufenden Background-Job."""
+		"""Enqueued den Vollimport als langlaufenden Background-Job. Setzt einen abgebrochenen/
+		gescheiterten Vollimport mit noch unfertigem Seiten-Fortschritt fort, statt jedes Mal
+		komplett neu zu beginnen (siehe `_resumable_full_import()`)."""
 		if not self.enabled:
 			frappe.throw("WeClapp Sync ist deaktiviert.")
 
@@ -386,6 +388,20 @@ class WeClappSettings(Document):
 		if running:
 			frappe.throw(f"Es läuft bereits ein Sync-Vorgang ({running[0].mode}).")
 
+		from weclapp_sync.sync.engine import MODE_FULL, create_run
+
+		resume_name = self._resumable_full_import()
+		# Run-Doc synchron VOR dem Enqueue auf "Running" setzen (nicht erst im Job selbst) -
+		# sonst kann der minütliche Scheduler-Tick in der Lücke zwischen Enqueue und
+		# tatsächlichem Job-Start noch keinen laufenden Lauf sehen und parallel einen Delta-Sync
+		# anstoßen (Bugfix 2026-09-16, siehe scheduler.py für das symmetrische Gegenstück).
+		if resume_name:
+			run_name = resume_name
+			frappe.db.set_value("WeClapp Sync Run", run_name, "status", "Running")
+		else:
+			run_name = create_run(MODE_FULL).name
+		frappe.db.commit()
+
 		# Eigenes, viel größeres Timeout als der Delta-Sync (siehe full_import_job_timeout-
 		# Feldbeschreibung) - 2026-09-14 live beobachtet: mit `delta_job_timeout` (Default 3600 s)
 		# killte RQ den Vollimport-Job nach genau einer Stunde mitten im Lauf (bei
@@ -396,8 +412,48 @@ class WeClappSettings(Document):
 			queue="long",
 			job_id="weclapp_sync_full_import",
 			timeout=self.full_import_job_timeout or 21600,
+			run_name=run_name,
 		)
-		return "Vollimport wurde gestartet – Fortschritt unter „WeClapp Sync Run“."
+		if resume_name:
+			return f"Vollimport {run_name} wird fortgesetzt (vorheriger Abbruch) – Fortschritt unter „WeClapp Sync Run“."
+		return f"Vollimport {run_name} wurde gestartet – Fortschritt unter „WeClapp Sync Run“."
+
+	@staticmethod
+	def _resumable_full_import() -> str | None:
+		"""Jüngster nicht erfolgreich beendeter Vollimport, der noch echten Seiten-Fortschritt
+		hat (mind. ein Objekttyp mit `progress_run` == dieser Lauf). **Bugfix 2026-09-16:** der
+		Resume-Mechanismus (`progress_run`/`progress_page`, siehe engine.py) existierte schon
+		lange, wurde aber von keinem Aufrufer je mit `run_name` genutzt - ein abgebrochener
+		Vollimport begann bei einem erneuten Start immer bei Seite 1 von vorn."""
+		candidates = frappe.get_all(
+			"WeClapp Sync Run",
+			filters={"mode": "Full Import", "status": ("in", ("Aborted", "Aborted (stale)", "Failed"))},
+			fields=["name"],
+			order_by="creation desc",
+			limit=1,
+		)
+		if not candidates:
+			return None
+		name = candidates[0].name
+		has_progress = frappe.get_all(
+			"WeClapp Sync Object Type",
+			filters={"parent": "WeClapp Settings", "progress_run": name},
+			limit=1,
+		)
+		return name if has_progress else None
+
+	@frappe.whitelist()
+	def cleanup_duplicate_attachments(self):
+		"""Einmalige Bereinigung der Anhang-Dubletten aus der Zeit vor dem `wc_id`-Dedup-Fix
+		(siehe `_attachments.py`). Bewusst ein separater, vom Nutzer ausgelöster Button - kein
+		automatischer Teil des Syncs, weil er in ERPNext löscht (Produktivdaten)."""
+		from weclapp_sync.sync.mappers._attachments import cleanup_duplicate_attachments
+
+		res = cleanup_duplicate_attachments()
+		return (
+			f"{res['checked']} Dateien geprüft, {res['duplicates_found']} Dubletten gefunden, "
+			f"{res['deleted']} gelöscht, {res['failed']} fehlgeschlagen."
+		)
 
 	# ------------------------------------------------------------------ Zusatzfelder
 	@frappe.whitelist()

@@ -123,6 +123,17 @@ frappe.ui.form.on("WeClapp Settings", {
 			}
 		);
 	},
+
+	cleanup_duplicate_attachments(frm) {
+		frappe.confirm(
+			__("Doppelte Anhänge (Bilder/Beleg-PDFs) jetzt löschen? Behält je Zieldokument die älteste Datei, entfernt den Rest. Schreibt in ERPNext, nicht rückgängig zu machen."),
+			() => {
+				frm.call({ doc: frm.doc, method: "cleanup_duplicate_attachments", freeze: true }).then((r) => {
+					frappe.msgprint({ title: __("Anhänge bereinigt"), message: r.message, indicator: "green" });
+				});
+			}
+		);
+	},
 });
 
 const _ASSIGNABLE_FIELDTYPES = [
