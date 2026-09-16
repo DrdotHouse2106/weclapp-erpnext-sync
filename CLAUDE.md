@@ -3,6 +3,47 @@
 Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
 (Konvention aus dem Ursprungsprojekt, siehe unten).
 
+### Increment 21 (2026-09-16): Gezielte Kontenanlage aus WeClapps Kontenrahmen (Cross-Session)
+Auslöser: eine parallele Claude-Session (`versand_integration`, DHL/DPD/Deutsche-Post-Anbindung)
+brauchte für Portokasse-Journalbuchungen ein ERPNext-Konto und fragte per Cross-Session-Nachricht
+nach, ob unser Sync Konten anlegt. Antwort zunächst: nein, `setup_accounts` war nie gebaut
+(TODO seit Increment 1). Marcel wollte das dann aber explizit ("das soll auch passieren").
+
+**Wichtigster Fund, per Live-Probelauf VOR dem Ausliefern entdeckt (nicht nur behauptet):**
+WeClapps `ledgerAccount`-Entität hat **7739 Einträge** - der komplette generische SKR03-
+Vorlagenkontenrahmen, nicht nur die von FranceTec tatsächlich genutzten Konten. Ein erster
+Entwurf (automatischer Vollabgleich: jedes fehlende Konto anlegen, wenn ein Geschwisterkonto
+schon in ERPNext existiert) hätte im Probelauf **726 größtenteils irrelevante Vorlagen-Konten**
+angelegt (z.B. "0010 Konzessionen und gewerbl. Schutzrechte", diverse Gebäude-/Anlagen-
+Unterkategorien) - verworfen, bevor es ausgeliefert wurde.
+
+**Zweiter Fund, ebenfalls im Probelauf entdeckt:** selbst die Geschwisterkonto-Heuristik allein
+ist nicht zuverlässig genug für automatische Platzierung. WeClapps Gruppe "B1660"
+("Kassenbestand, Bundesbankguthaben, Guthaben bei Kreditinstituten und Schecks") bündelt live
+Kasse, Postbank, PayPal, Amazon Pay, SumUp, eBay etc. in EINER Gruppe, während ERPNext das auf
+mehrere Untergruppen aufteilt ("Kasse - FT" vs. "Bank - FT" vs. ...). "Einfach das erste
+gefundene Geschwisterkonto nehmen" hätte "1270 N26" (ein Bankkonto) fälschlich unter "Kasse - FT"
+(`account_type "Cash"`) einsortiert.
+
+**Endgültiges Design** (`weclapp_settings.create_missing_ledger_accounts()`, neues Feld
+`ledger_account_numbers` + Button "Diese Konten aus WeClapp anlegen", Sektion "Personenkonten"):
+- **Gezielt statt Vollabgleich** - der Nutzer trägt konkret gebrauchte Kontonummern ein (z.B.
+  "1030, 1270"), kein automatisches Scannen des gesamten WeClapp-Kontenrahmens. Passt zur
+  echten Nutzungsart: andere Integrationen (wie `versand_integration`) brauchen punktuell
+  einzelne Konten, keinen Komplett-Import.
+- **Nur eindeutige Platzierung** - `_erpnext_sibling()` sammelt ALLE in ERPNext bereits
+  vorhandenen Geschwisterkonten (gleicher WeClapp-`parentAccountId`) und legt ein neues Konto
+  nur an, wenn sie sich alle auf dieselbe ERPNext-Gruppe einigen. Bei Widerspruch: übersprungen,
+  Rückmeldung nennt die widersprüchlichen Gruppen zur manuellen Entscheidung.
+- WeClapp-Aufrufe bleiben klein/gezielt (`accountNumber-in=[...]` + `parentAccountId-eq=<id>`
+  pro betroffenem Elternknoten, live verifiziert) - nie die volle 7739-Zeilen-Liste geladen.
+- **Live-Ergebnis:** "1030 Portokasse" existierte zum Zeitpunkt des Baus schon (von der anderen
+  Session selbst angelegt, nachdem ich ihr grünes Licht gegeben hatte - Kontonummer war frei).
+  "1270 N26" bleibt bewusst ungelöst (Kasse/Bank-Mehrdeutigkeit) - manuell anzulegen nach dem
+  Muster von "1100 - Postbank - FT": `parent_account = "Bank - FT"`, `account_type = "Bank"`.
+- **Noch nicht über den Button selbst getestet** (nur die zugrundeliegende Logik per Skript
+  read-only gegen die echte Instanz simuliert/verifiziert).
+
 ### Increment 20 (2026-09-16): Code-Review (Fable) + alle Befunde behoben
 Auf Nutzer-Wunsch eine strukturierte Prüfliste für ein Code-Review erstellt, von Fable gegen den
 echten Code + die Live-Instanz geprüft (`repo_review_findings.md`, Hoch/Mittel/Niedrig

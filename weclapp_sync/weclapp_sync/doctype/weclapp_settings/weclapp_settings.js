@@ -60,6 +60,23 @@ frappe.ui.form.on("WeClapp Settings", {
 		);
 	},
 
+	create_missing_ledger_accounts(frm) {
+		frappe.confirm(
+			__("Die oben eingetragenen Kontonummern aus WeClapps Kontenrahmen im ERPNext-Kontenplan anlegen? Nur Konten, für die schon ein Geschwisterkonto existiert."),
+			() => {
+				frm.call({
+					doc: frm.doc,
+					method: "create_missing_ledger_accounts",
+					freeze: true,
+					freeze_message: __("Lege Konten an …"),
+				}).then((r) => {
+					frm.reload_doc();
+					frappe.msgprint({ title: __("Kontenplan"), message: (r.message || "").replace(/\n/g, "<br>"), indicator: "green" });
+				});
+			}
+		);
+	},
+
 	populate_tax_mappings(frm) {
 		frappe.confirm(
 			__("Alle Kontospalten im Steuer-Mapping werden aus WeClapp neu abgeleitet (manuelle Änderungen gehen verloren). Fortfahren?"),

@@ -57,6 +57,9 @@
   "section_accounts",
   "debtor_parent_account",
   "creditor_parent_account",
+  "ledger_accounts_help",
+  "ledger_account_numbers",
+  "create_missing_ledger_accounts",
   "section_tax",
   "submit_documents",
   "default_income_account",
@@ -383,6 +386,22 @@
    "fieldtype": "Link",
    "label": "Kreditoren-Sammelgruppe",
    "options": "Account"
+  },
+  {
+   "fieldname": "ledger_accounts_help",
+   "fieldtype": "HTML",
+   "options": "<p class=\"text-muted\">Legt GEZIELT einzelne, in ERPNext fehlende Sachkonten aus WeClapps eigenem Kontenrahmen (z.B. SKR03) an - z.B. wenn ein Journal-Sync (andere Integration) ein Konto braucht, das in WeClapp längst existiert, in ERPNext aber noch fehlt. Bewusst kein automatischer Vollabgleich (WeClapps Kontenrahmen enthält tausende generische SKR03-Vorlagenkonten) - unten die konkret gebrauchten Kontonummern eintragen. Platziert ein neues Konto nur, wenn dafür in ERPNext schon ein Geschwisterkonto (gleiche WeClapp-Kontengruppe) existiert - sonst wird es übersprungen und in der Rückmeldung aufgelistet.</p>"
+  },
+  {
+   "description": "Komma- oder zeilengetrennt, z.B. 1030, 1270",
+   "fieldname": "ledger_account_numbers",
+   "fieldtype": "Small Text",
+   "label": "Kontonummern"
+  },
+  {
+   "fieldname": "create_missing_ledger_accounts",
+   "fieldtype": "Button",
+   "label": "Diese Konten aus WeClapp anlegen"
   },
   {
    "fieldname": "section_tax",
