@@ -21,14 +21,6 @@ def get_client() -> WeClappClient:
 	return WeClappClient(base_url, token, page_size=page_size)
 
 
-def is_object_type_enabled(key: str) -> bool:
-	settings = get_settings()
-	for row in settings.object_types:
-		if row.object_type == key:
-			return bool(row.enabled)
-	return False
-
-
 def get_object_type_row(key: str):
 	settings = get_settings()
 	for row in settings.object_types:

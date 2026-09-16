@@ -28,12 +28,6 @@ def time_from_ts(ts: int | None) -> str | None:
 	return datetime.fromtimestamp(int(ts) / 1000).strftime("%H:%M:%S")
 
 
-def datetime_from_ts(ts: int | None) -> str | None:
-	if not ts:
-		return None
-	return datetime.fromtimestamp(int(ts) / 1000).strftime("%Y-%m-%d %H:%M:%S")
-
-
 # --------------------------------------------------------------------------- Text
 def standardize_phone_number(number: str | None, default_country_code: str = _DEFAULT_PHONE_CC) -> str:
 	"""WeClapp speichert oft explizit null statt einer fehlenden Nummer."""
@@ -76,16 +70,6 @@ def custom_fieldname(attribute_key: str) -> str:
 
 def join_notes(*values: str | None) -> str:
 	return "\n".join(strip_html(v) for v in values if v).strip()
-
-
-# --------------------------------------------------------------------------- deterministische Namen
-def wc_warehouse_name(wc_name: str, wc_id: str) -> str:
-	return f"{wc_name} ({wc_id})"
-
-
-def wc_account_name(account_number: str, description: str) -> str:
-	label = {"1200": "Bankkonto", "1000": "Kasse"}.get(account_number, description)
-	return f"{account_number} - {label}"
 
 
 # --------------------------------------------------------------------------- settings-abhängig
