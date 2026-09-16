@@ -29,6 +29,11 @@ _WC_ID_DOCTYPES = [
 	"Stock Entry",
 	"Payment Entry",
 	"Communication",
+	# Bugfix 2026-09-16: Anhang-Dedup (_attachments.py) verglich bisher den Dateinamen, aber
+	# Frappe hängt beim Speichern Hash-Suffixe an - der Abgleich griff dadurch praktisch nie
+	# (live: 21034 von 21507 File-Datensätzen an Items mit Suffix). Mit `wc_id` auf File selbst
+	# lässt sich der WeClapp-Dokument-/Bild-Ursprung eindeutig wiederfinden.
+	"File",
 ]
 
 # Eigene Feldnamen dieser Kette - beim Anker-Suchen ausschließen, sonst Ringschluss (die Sektion

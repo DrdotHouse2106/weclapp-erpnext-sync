@@ -146,6 +146,62 @@ class WeClappClient:
 		assert last_exc is not None
 		raise last_exc
 
+	def _stream_request(self, path: str, *, params: Mapping[str, Any] | None = None) -> requests.Response:
+		"""Wie `_request()`, aber mit `stream=True` für Binärinhalte (Dokumente/Artikelbilder) -
+		dieselbe Last-Management-/Retry-Schleife (X-Weclapp-Wait-Ms, 429/503), die die Listen-/
+		Zähl-Endpunkte schon nutzen. **Bugfix 2026-09-16:** die Streaming-Downloads gingen bisher
+		direkt über `session.get()`, ganz ohne Rücksicht auf `X-Weclapp-Wait-Ms`/429/503 - bei
+		aktiviertem Bild-/Dokument-Sync (die inzwischen zahlreichsten Aufrufe) genau das Gegenteil
+		vom sonst überall respektierten Last-Management. Der Aufrufer MUSS die Response als
+		Context-Manager verwenden (`with ...:`), damit die Verbindung nach dem Streamen wieder
+		freigegeben wird."""
+		url = self.base_url + path
+		if self._pending_wait_s:
+			time.sleep(min(self._pending_wait_s, _MAX_WAIT_S))
+			self._pending_wait_s = 0.0
+
+		last_exc: Exception | None = None
+		for attempt in range(_MAX_RETRIES):
+			response: requests.Response | None = None
+			try:
+				response = self.session.get(url, params=params, stream=True, timeout=_TIMEOUT)
+			except requests.RequestException as e:
+				last_exc = WeClappApiError(f"Verbindungsfehler bei GET {url}: {e}", method="GET", url=url)
+				time.sleep(min(2**attempt, _MAX_WAIT_S))
+				continue
+
+			wait_ms = response.headers.get("X-Weclapp-Wait-Ms")
+			if wait_ms and wait_ms.isdigit():
+				self._pending_wait_s = min(int(wait_ms) / 1000.0, _MAX_WAIT_S)
+
+			if response.status_code in (429, 503) and attempt < _MAX_RETRIES - 1:
+				response.close()
+				retry_after = response.headers.get("Retry-After")
+				sleep_s = self._pending_wait_s or (
+					float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit()
+					else min(2**attempt, _MAX_WAIT_S)
+				)
+				self._pending_wait_s = 0.0
+				time.sleep(min(sleep_s, _MAX_WAIT_S))
+				continue
+
+			try:
+				response.raise_for_status()
+			except requests.RequestException as e:
+				text = response.text[:500]
+				response.close()
+				raise WeClappApiError(
+					f"HTTP {response.status_code} bei GET {url}: {text}",
+					method="GET",
+					url=url,
+					status_code=response.status_code,
+					response_text=text,
+				) from e
+			return response
+
+		assert last_exc is not None
+		raise last_exc
+
 	@staticmethod
 	def _merge_params(
 		params: Mapping[str, Any] | None, filters: Mapping[str, Any] | None
@@ -256,14 +312,10 @@ class WeClappClient:
 	def iter_document_content(self, document_id: str, *, chunk_size: int = 1 << 16) -> Iterator[bytes]:
 		"""Generator über den Binärinhalt eines WeClapp-Dokuments - streamend, damit große
 		PDFs nicht komplett in den RAM geladen werden. Der Aufrufer schreibt die Chunks direkt
-		in eine Datei / einen Frappe-File und verwirft sie."""
-		url = self.base_url + f"document/id/{document_id}/download"
-		try:
-			with self.session.get(url, stream=True, timeout=_TIMEOUT) as resp:
-				resp.raise_for_status()
-				yield from resp.iter_content(chunk_size=chunk_size)
-		except requests.RequestException as e:
-			raise WeClappApiError(f"Download von document/{document_id} fehlgeschlagen: {e}", url=url) from e
+		in eine Datei / einen Frappe-File und verwirft sie. Last-Management/Retry über
+		`_stream_request()` (siehe dort - Bugfix 2026-09-16)."""
+		with self._stream_request(f"document/id/{document_id}/download") as resp:
+			yield from resp.iter_content(chunk_size=chunk_size)
 
 	def iter_article_image_content(
 		self, article_id: str, image_id: str, *, chunk_size: int = 1 << 16
@@ -274,17 +326,10 @@ class WeClappClient:
 		verifiziert). Der richtige, ebenfalls rein lesende Endpunkt ist
 		`article/id/{articleId}/downloadArticleImage?articleImageId={imageId}` (live getestet,
 		200 mit dem tatsächlichen Bildinhalt)."""
-		url = self.base_url + f"article/id/{article_id}/downloadArticleImage"
-		try:
-			with self.session.get(
-				url, params={"articleImageId": image_id}, stream=True, timeout=_TIMEOUT
-			) as resp:
-				resp.raise_for_status()
-				yield from resp.iter_content(chunk_size=chunk_size)
-		except requests.RequestException as e:
-			raise WeClappApiError(
-				f"Bild-Download von article/{article_id}/downloadArticleImage fehlgeschlagen: {e}", url=url
-			) from e
+		with self._stream_request(
+			f"article/id/{article_id}/downloadArticleImage", params={"articleImageId": image_id}
+		) as resp:
+			yield from resp.iter_content(chunk_size=chunk_size)
 
 	# ------------------------------------------------------------------ Helfer
 	@staticmethod
