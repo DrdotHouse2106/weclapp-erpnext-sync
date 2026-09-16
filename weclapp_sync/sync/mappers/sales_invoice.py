@@ -116,6 +116,13 @@ class SalesInvoiceMapper(TransactionMapper):
 		son = record.get("salesOrderNumber")
 		if son and frappe.db.exists("Sales Order", son):
 			doc.wc_sales_order = son
+			# salesInvoice führt orderNumberAtCustomer (Kundenbestellnummer) selbst nicht (live
+			# geprüft 2026-09-16) - vom verknüpften Auftrag übernehmen, der es via
+			# sales_order.py schon aus WeClapp gesetzt bekommt (genau das Verhalten, das
+			# ERPNext bei "Rechnung aus Auftrag erstellen" auch nativ zeigt).
+			po_no = frappe.db.get_value("Sales Order", son, "po_no")
+			if po_no:
+				doc.po_no = po_no
 
 		if settings.default_sales_taxes_template and frappe.db.exists(
 			"Sales Taxes and Charges Template", settings.default_sales_taxes_template

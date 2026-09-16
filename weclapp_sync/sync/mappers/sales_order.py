@@ -3,6 +3,10 @@
 Portiert aus reference/.../sales_order_migration.py. Gleiche Positions-/Steuerlogik wie das
 Angebot (`_transaction`), zusätzlich Liefertermin und der Belegketten-Verweis auf das Angebot
 (`wc_quotation`, read-only Link). Dokumentname = WeClapp-`orderNumber` (kein Präfix).
+
+`orderNumberAtCustomer` (die Bestellnummer, die der Kunde selbst intern führt) -> ERPNexts
+natives `po_no`-Feld ("Customer's Purchase Order"). `quotation`/`purchaseOrder` haben dieses
+WeClapp-Feld nicht (live geprüft 2026-09-16) - nur bei salesOrder vorhanden.
 """
 
 from __future__ import annotations
@@ -76,6 +80,10 @@ class SalesOrderMapper(TransactionMapper):
 				"ignore_pricing_rule": 1,
 				"apply_discount_on": "Net Total",
 				"discount_amount": self.header_discount_amount(record),
+				# Nutzer-Fund 2026-09-16: WeClapp `orderNumberAtCustomer` (die Bestellnummer,
+				# die der KUNDE selbst intern führt) landete bisher nirgends - ERPNexts eigenes
+				# Standardfeld dafür ist `po_no` ("Customer's Purchase Order").
+				"po_no": (record.get("orderNumberAtCustomer") or "")[:140] or None,
 				"wc_id": str(record.get("id") or "") or None,
 				"wc_last_modified": str(record.get("lastModifiedDate") or "") or None,
 			}

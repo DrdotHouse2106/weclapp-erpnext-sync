@@ -3,6 +3,45 @@
 Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
 (Konvention aus dem Ursprungsprojekt, siehe unten).
 
+### Increment 23 (2026-09-16): Kundenbestellnummer (po_no) fehlte + Feld-Audit über alle Entitäten
+Nutzer-Fund: bei Auftrag 2026AU2297 ist WeClapps `orderNumberAtCustomer` ("8591512") gesetzt,
+ERPNexts `po_no` ("Customer's Purchase Order") blieb aber leer - `sales_order.py` hat das Feld
+nie gelesen. **Fix:** `orderNumberAtCustomer` -> `po_no` in `sales_order.py`. `sales_invoice.py`
+übernimmt `po_no` zusätzlich vom verknüpften `wc_sales_order` (salesInvoice selbst führt
+`orderNumberAtCustomer` nicht, live geprüft) - genau das Verhalten, das ERPNext bei "Rechnung
+aus Auftrag erstellen" auch nativ zeigt. `quotation`/`purchaseOrder` haben dieses WeClapp-Feld
+nicht (live geprüft), branchen also aus.
+
+**Anschließender Audit** (auf Nutzer-Wunsch "schaue nach welche Felder noch vergessen wurden in
+allen Entitäten"): volle Beispieldatensätze aus WeClapp (quotation, salesOrder, salesInvoice,
+shipment, purchaseOrder, purchaseInvoice, customer, supplier, crmEvent,
+warehouseStockMovement) gegen die tatsächlich gelesenen Felder jedes Mappers abgeglichen.
+- **`shipment.packageTrackingNumber`-Verdacht geprüft, aber kein Bug:** ein einzelner alter
+  Test-Datensatz (Shipment 326243, Jan. 2024) hatte das Feld leer und nur
+  `packageTrackingUrl` gesetzt - sah zunächst nach falschem Feldnamen aus. Stichprobe über 10
+  aktuelle Shipments zeigt: `packageTrackingNumber` ist bei 8/10 korrekt gefüllt, unser Mapper
+  liest das richtige Feld. `packageTrackingUrl`/`parcels[].trackingUrl` enthalten über die API
+  ohnehin nur einen maskierten Platzhalter (`..trackingcode..`) statt des echten Codes.
+- **Keine weiteren Bugs auf demselben Schweregrad gefunden.** Übrige ungenutzte Felder sind
+  durchgehend informativ/optional, kein Fall von "Daten da, aber ERPNext-Feld dafür leer":
+  - `quotation`: `salesStageName`/`salesProbability`/`followupType` (CRM-Pipeline-Felder ohne
+    ERPNext-Pendant), `publicLink`, `validFrom` (nur `validTo` gelesen).
+  - `shipment`: `packageWeight/Height/Length/Width`/`totalWeight` (physische Paketmaße),
+    `parcels` (Mehrpaket-Sendungen - nur das erste/Kopf-Tracking wird erfasst), `purchaseOrders`
+    (Dropshipping-Rückverknüpfung, im Gegensatz zu `purchase_order.py`s `wc_sales_order` gibt es
+    kein `wc_purchase_order`-Pendant auf `shipment` selbst).
+  - `purchaseOrder`: `purchaseOrderType` (z.B. "TRIANGULAR"/Streckengeschäft - indirekt schon
+    über den gesetzten `wc_sales_order`-Link erkennbar).
+  - `customer`/`supplier`: `salesChannel`, `shipmentMethodName`, `blocked`/`insolvent`/
+    `deliveryBlock`/`invoiceBlock` (**bewusst offen**, siehe `apply_wc_blocks` in der
+    "Als Nächstes"-Liste ganz unten - kein neuer Fund), `useCustomsTariffNumber`,
+    `commissionSalesPartners`.
+  - `purchaseInvoice`/`crmEvent`/`warehouseStockMovement`: keine auffälligen Lücken - `crmEvent`
+    und `warehouseStockMovement` sind ohnehin schmale Entitäten, praktisch vollständig gemappt.
+- Alle oben genannten sind bewusst NICHT mit umgesetzt (nur dokumentiert) - reine Zusatzinfos
+  ohne erkennbaren Datenverlust-Charakter, im Gegensatz zum `po_no`-Fund. Bei Bedarf einzeln
+  nachreichen, statt ungefragt den Scope zu erweitern.
+
 ### Increment 22 (2026-09-16): "Alle jemals gebuchten Konten importieren" (Ergänzung zu Increment 21)
 Nutzer lud die WeClapp-eigenen Kontenrahmen-Exporte hoch (Kontenplan_SKR03, Kontenmatrix,
 Standard-Konten, Steuerkontenzuordnung) und stellte klar: die reine Einzel-Eintragung aus
