@@ -3,6 +3,86 @@
 Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
 (Konvention aus dem Ursprungsprojekt, siehe unten).
 
+### Increment 20 (2026-09-16): Code-Review (Fable) + alle Befunde behoben
+Auf Nutzer-Wunsch eine strukturierte Prüfliste für ein Code-Review erstellt, von Fable gegen den
+echten Code + die Live-Instanz geprüft (`repo_review_findings.md`, Hoch/Mittel/Niedrig
+priorisiert), anschließend alle Hoch- und Mittel-Befunde sowie einen Teil der Niedrig-Befunde
+behoben:
+
+- **Anhang-Dedup war wirkungslos** (Hoch): `_attachments.py` verglich `File.file_name`, aber
+  Frappe hängt beim Speichern Hash-Suffixe an - der Abgleich griff praktisch nie (live: 21034
+  von 21507 File-Datensätzen an Items mit Suffix, 5718 Items mit derselben Datei mehrfach,
+  teils >15x). Fix: `File` bekommt jetzt `wc_id` (siehe `setup/custom_fields.py`
+  `_WC_ID_DOCTYPES`), Dedup läuft darüber. Neuer Settings-Button "Doppelte Anhänge bereinigen"
+  (`_attachments.cleanup_duplicate_attachments()`) für die einmalige Bereinigung des
+  Altbestands - bewusst manuell ausgelöst, nicht automatisch (schreibt/löscht in ERPNext).
+- **Streaming-Downloads ignorierten das Rate-Limit** (Mittel): `iter_document_content()`/
+  `iter_article_image_content()` gingen bisher direkt über `session.get()`, ohne
+  `X-Weclapp-Wait-Ms`/429/503 zu beachten - ausgerechnet bei den jetzt zahlreichsten Aufrufen.
+  Neue `client._stream_request()` teilt sich die Retry-/Wartelogik mit `_request()`. Anhang-
+  Fehler werden jetzt außerdem geloggt statt in einem stillen `except: continue` zu verschwinden.
+- **Stale-Cleaner konnte gesunde Langläufer killen** (Hoch, strukturell): `recover_stale_runs()`
+  nutzte einen festen 1h-Cutoff auf `Run.modified`, das aber nur am Typ-ENDE angefasst wurde -
+  ein einzelner Objekttyp > 1h (Artikel mit vielen Bild-Downloads) hätte den Run mitten im Lauf
+  fälschlich als "stale" markiert. Fix: Heartbeat in `engine._save_progress()` (setzt
+  `Run.modified` bei jeder Seite) + der Cutoff richtet sich jetzt nach dem Timeout des jeweiligen
+  Lauf-Modus (`full_import_job_timeout`/`delta_job_timeout`) statt starr 1h.
+- **Kein Failure-Pfad in `run_sync`** (Hoch): ein harter Abbruch (RQ-Timeout, Kill) ließ den Run
+  bis zum nächsten stündlichen Stale-Cleaner auf "Running" stehen - Ursache der drei "hängt"-
+  Vorfälle (WC-SYNC-00031/00203/00205). Fix: `run_sync()` fängt jetzt `BaseException` um die
+  Objekttyp-Schleife und setzt den Run sofort auf den neuen Status "Failed", bevor der Fehler
+  weitergereicht wird. Zusätzlich reicht `sync_object_type()` RQs `JobTimeoutException` jetzt
+  explizit durch, statt sie als normalen Datensatz-/Typ-Fehler zu schlucken und einfach
+  weiterzulaufen.
+- **Nachlauf-Isolierung in article.py ohne Savepoint** (Hoch): der try/except-Fix von Increment
+  19 (siehe dort) hatte selbst noch keinen Savepoint - `_sync_prices()` löscht erst alle Preise
+  und legt sie neu an; scheitert der Neuaufbau, blieben die Löschungen stehen. Neue
+  `base.guarded_step()` (Savepoint + Rollback + Log) - jetzt für alle drei Artikel-Nachlauf-
+  Schritte genutzt, UND nach `customer.py`/`supplier.py` gezogen (die hatten dasselbe Muster
+  vorher schon, nur als lokal duplizierte `_guarded()`-Funktion).
+- **`setup_fiscal_years` konnte an einem einzigen Tippfehler-Beleg scheitern** (Mittel): nahm je
+  Entität nur die sortiert erste Zeile - bei `salesInvoice` war das ein Beleg mit Jahr "0022",
+  wodurch die ganze Entität nichts zum frühesten Jahr beitrug. Fix: serverseitig mit
+  `{feld}-ge=<2000-01-01>` gefiltert (WeClapp `-ge` bestätigt nutzbar), zusätzlich
+  `shipment`/`warehouseStockMovement` aufgenommen. `_year_from_ms` außerdem auf exaktes
+  `datetime.fromtimestamp` statt einer Sekunden-Näherung umgestellt.
+- **Enqueue-Race Vollimport-Button vs. Scheduler-Tick** (Mittel): zwischen `frappe.enqueue()`
+  und dem tatsächlichen Job-Start existierte keine "Running"-Markierung - ein Scheduler-Tick in
+  dieser Lücke konnte `_has_running_run()` leer vorfinden und parallel einen Delta-Sync starten.
+  Fix: `engine.create_run()` (vorher privates `_create_run`) legt den Run jetzt synchron VOR dem
+  `frappe.enqueue()` an, in `start_full_import()` UND `scheduler.enqueue_due_delta_sync()`
+  (symmetrisch für beide Auslöser).
+- **Totes Resume-Feature jetzt genutzt** (Mittel): `progress_run`/`progress_page` gab es schon
+  lange (Increment 1), aber kein Aufrufer setzte je `run_name` beim Start - ein abgebrochener
+  Vollimport begann immer wieder bei Seite 1. `start_full_import()` erkennt jetzt einen
+  abgebrochenen/gescheiterten Vollimport mit echtem Fortschritt (`_resumable_full_import()`) und
+  setzt ihn fort statt neu zu beginnen.
+- **Party-N+1 behoben** (Mittel): `customer.py`/`supplier.py` holten bisher ein WeClapp-GET pro
+  Datensatz fürs `party`-Objekt (~6.200 Aufrufe/Vollimport). Neuer `Mapper.prepare_page()`-Hook
+  (von der Engine einmal je Seite vor der Datensatz-Schleife aufgerufen) + `_party_common.
+  PartyCacheMixin` holen jetzt einen Sammel-Abruf je Seite (`party?id-in=[...]`, live verifiziert
+  - braucht ein literales `[a,b,c]`, keine Komma-Liste/wiederholte Parameter) - reduziert auf
+  ~60 Aufrufe. Fällt pro Datensatz auf ein einzelnes GET zurück, falls die Sammel-Abfrage eine
+  ID nicht erfasst hat.
+- **Kleinere Punkte:** Stub-Items aus `resolve_line_item()` (Beleg referenziert einen noch nicht
+  synctierten Artikel) bekamen `description`/`item_group` nie von der echten Artikel-Daten
+  nachgezogen, weil `is_new` beim späteren Artikel-Sync schon False war - Fix über ein
+  zusätzliches `creation == modified`-Kriterium (unangetastet seit Anlage). `sort="id"` auf
+  allen `ObjectTypeSpec`s für stabile Pagination (Löschungen in WeClapp während eines Laufs
+  könnten sonst Seiten verschieben und Datensätze überspringen). Tote Helfer entfernt
+  (`datetime_from_ts`, `wc_warehouse_name`, `wc_account_name`, `settings.
+  is_object_type_enabled`), veraltete Docstrings korrigiert (customer.py "Noch NICHT portiert"-
+  Liste, `TransactionMapper`-Docstring, Abbruch-Meldungstexte).
+- **Bewusst nicht umgesetzt** (siehe Review-Notiz, niedrige Priorität/reine Geschmacksfragen):
+  `default_currency()` liest die Settings statt `Company.default_currency`; keine automatisierten
+  Tests (mehrere reine Funktionen wären ohne Frappe-Umgebung leicht testbar); Artikelbilder mit
+  `is_private=0`; Löschungen in WeClapp werden nicht nach ERPNext propagiert (kein Tombstone);
+  Nachlauf-Fehler (Adressen/Kontakte/Bilder) landen weiterhin im Error Log statt im WeClapp Sync
+  Log (Run zeigt "0 failed", auch wenn Teilschritte scheiterten) - würde einen eigenen
+  "Teilfehler"-Zähler brauchen, aufgehoben für eine spätere Session.
+- **Noch nicht gegen die Live-Instanz getestet** (nur die neuen WeClapp-API-Filter/-Endpunkte
+  wurden read-only live verifiziert, siehe oben) - nächster Vollimport zeigt, ob alles greift.
+
 ### Increment 19 (2026-09-12): Item-Steuer-Template-Konflikt sauber gelöst
 Offenes Problem aus Increment 12 (siehe dort: "Die Steuern sind aber immernoch nicht gesetzt"):
 wie schlägt ERPNext künftigen, von Hand erfassten Belegen (nach Live-Umstellung) einen
