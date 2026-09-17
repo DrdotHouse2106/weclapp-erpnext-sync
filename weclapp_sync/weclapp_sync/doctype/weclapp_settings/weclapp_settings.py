@@ -104,9 +104,15 @@ def _ledger_reference():
 	finally:
 		client.close()
 	by_number = {a["accountNumber"]: a for a in ledger if a.get("accountNumber")}
+	# Nur IMPERSONAL_ACCOUNT-Geschwister sammeln (siehe Bugfix 2026-09-17 in
+	# _erpnext_sibling() - PERSONAL_ACCOUNT-Einträge unter demselben WeClapp-Elternknoten
+	# würden sonst gegen die ~6200 individuellen Debitoren-/Kreditorenkonten in ERPNext
+	# matchen, die ALLE unter genau zwei Sammelgruppen (debtor_/creditor_parent_account)
+	# liegen - das machte live jedes einzige Sachkonto fälschlich "mehrdeutig".
 	by_parent: dict[str, list[dict]] = {}
 	for a in ledger:
-		by_parent.setdefault(a.get("parentAccountId"), []).append(a)
+		if a.get("type") == "IMPERSONAL_ACCOUNT":
+			by_parent.setdefault(a.get("parentAccountId"), []).append(a)
 	return by_number, by_parent
 
 
@@ -122,7 +128,18 @@ def _erpnext_sibling(acc: dict, by_parent: dict, company: str):
 	unter "Kasse - FT"/`account_type "Cash"` gelandet, nur weil "1000 Kasse" zufällig zuerst in
 	der Geschwisterliste stand. Bei Uneinigkeit unter den gefundenen Geschwistern wird jetzt
 	NICHT geraten, sondern als mehrdeutig übersprungen (Rückmeldung nennt die widersprüchlichen
-	Gruppen)."""
+	Gruppen).
+
+	**Bugfix 2026-09-17 (Live-Fund beim ersten echten Lauf von `import_used_ledger_accounts`):**
+	alle 70 fehlenden Konten wurden als "mehrdeutig" übersprungen, IMMER mit demselben Konflikt
+	(Debitoren-Sammelgruppe vs. Kreditoren-Sammelgruppe) - obwohl viele davon laut Vorab-
+	Simulation eindeutig hätten sein müssen. Ursache: `by_parent` (jetzt in `_ledger_reference()`
+	gefiltert) enthielt auch WeClapps `PERSONAL_ACCOUNT`-Einträge - teilt sich ein echtes
+	Sachkonto seinen WeClapp-Elternknoten mit irgendeinem Debitoren-/Kreditoren-Platzhalter aus
+	dem SKR03-Vorlagenkontenrahmen, matchte dessen Kontonummer gegen eines der ~6200 in ERPNext
+	individuell angelegten Personenkonten - die liegen ALLE unter genau zwei Sammelgruppen
+	(`debtor_/creditor_parent_account`), was praktisch jedes Sachkonto künstlich mehrdeutig
+	machte. `by_parent` enthält jetzt nur noch `IMPERSONAL_ACCOUNT`-Geschwister."""
 	matches = []
 	for other in by_parent.get(acc.get("parentAccountId"), []):
 		num = other.get("accountNumber") or ""
