@@ -688,7 +688,21 @@ class WeClappSettings(Document):
 		**Bugfix 2026-09-17:** lief bisher synchron im Web-Request - bei tausenden Dubletten
 		(live: >17.000 an Items) in einen 504 Gateway Timeout gelaufen, ohne auch nur eine
 		Datei zu prüfen. Jetzt als Hintergrund-Job (wie der Vollimport), Ergebnis landet im
-		Error Log ("WeClapp Anhang-Bereinigung abgeschlossen")."""
+		Error Log ("WeClapp Anhang-Bereinigung abgeschlossen").
+
+		**Bugfix 2026-09-17 (Nachfassung):** ein 504 auf der HTTP-Antwort bedeutet NICHT, dass
+		der Hintergrund-Job nicht doch losgelaufen ist (`frappe.enqueue` selbst ist sofort
+		fertig, nur die Antwort kam nicht rechtzeitig an) - mehrere Klicks/Retries nach einem
+		504 haben live zu **zwei parallel laufenden** Bereinigungs-Jobs geführt, die sich auf
+        derselben File-Tabelle gegenseitig blockierten (`Lock wait timeout exceeded`, 4157
+        Dateien in Folge fehlgeschlagen). Einfache Sperre über den Cache verhindert das."""
+		lock_key = "weclapp_sync_attachment_cleanup_running"
+		if frappe.cache().get_value(lock_key):
+			frappe.throw(
+				"Es läuft bereits eine Anhang-Bereinigung im Hintergrund - bitte warten, bis sie "
+				'im Error Log als "WeClapp Anhang-Bereinigung abgeschlossen" auftaucht.'
+			)
+		frappe.cache().set_value(lock_key, "1", expires_in_sec=3600)
 		frappe.enqueue(
 			"weclapp_sync.sync.mappers._attachments.cleanup_duplicate_attachments_job",
 			queue="long",

@@ -167,6 +167,12 @@ def cleanup_duplicate_attachments(doctype: str | None = None) -> dict:
 		except Exception:
 			failed += 1
 			frappe.log_error(title=f"WeClapp Anhang-Bereinigung: {name} fehlgeschlagen", message=frappe.get_traceback())
+			# Bugfix 2026-09-17: ohne Rollback bleibt die Transaktion nach einem DB-Fehler
+			# (live beobachtet: "Lock wait timeout exceeded") in einem kaputten Zustand -
+			# jede weitere Anweisung auf derselben Connection scheitert dann sofort mit
+			# demselben Fehler. Live: 4157 Dateien in Folge "fehlgeschlagen" statt nur die eine,
+			# die wirklich gesperrt war.
+			frappe.db.rollback()
 		if (deleted + failed) % _COMMIT_EVERY == 0:
 			frappe.db.commit()
 	frappe.db.commit()
@@ -178,12 +184,20 @@ def cleanup_duplicate_attachments_job() -> None:
 	tausenden Dubletten (live: >17.000 an Items) dauert die eigentliche Bereinigung zu lange
 	für einen synchronen Web-Request (504 Gateway Timeout beim ersten Versuch 2026-09-17, siehe
 	`cleanup_duplicate_attachments()`-Docstring). Ergebnis landet im Error Log, da ein
-	Hintergrund-Job keine Desk-Meldung mehr direkt anzeigen kann."""
-	res = cleanup_duplicate_attachments()
-	frappe.log_error(
-		title="WeClapp Anhang-Bereinigung abgeschlossen",
-		message=(
-			f"{res['checked']} Dateien geprüft, {res['duplicates_found']} Dubletten gefunden, "
-			f"{res['deleted']} gelöscht, {res['failed']} fehlgeschlagen."
-		),
-	)
+	Hintergrund-Job keine Desk-Meldung mehr direkt anzeigen kann.
+
+	Gibt in einem `finally` die Cache-Sperre aus dem Settings-Button wieder frei - egal ob der
+	Job sauber durchläuft oder (wie live am 2026-09-17 beobachtet, vermutlich durch einen
+	Redeploy mitten im Lauf) hart abbricht, sonst bliebe die Sperre bis zu ihrem 1h-Timeout
+	fälschlich stehen."""
+	try:
+		res = cleanup_duplicate_attachments()
+		frappe.log_error(
+			title="WeClapp Anhang-Bereinigung abgeschlossen",
+			message=(
+				f"{res['checked']} Dateien geprüft, {res['duplicates_found']} Dubletten gefunden, "
+				f"{res['deleted']} gelöscht, {res['failed']} fehlgeschlagen."
+			),
+		)
+	finally:
+		frappe.cache().delete_value("weclapp_sync_attachment_cleanup_running")
