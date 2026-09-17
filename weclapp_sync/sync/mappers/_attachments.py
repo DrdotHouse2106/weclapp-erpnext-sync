@@ -112,15 +112,36 @@ def attach_article_images(client, record: dict, item_code: str) -> None:
 			)
 
 
+# Doctypes, an die _attachments.py tatsächlich Dateien hängt (Item über attach_article_images,
+# die Belegs-Doctypes über attach_weclapp_documents) - die Bereinigung NUR hierauf eingrenzen.
+# **Bugfix 2026-09-17:** ohne diese Eingrenzung durchsucht die Funktion ALLE File-Datensätze im
+# gesamten System (auch fremde Apps, Kommentar-Anhänge, ...) - live beim ersten echten Aufruf
+# in einen 504 Gateway Timeout gelaufen, bevor auch nur eine einzige Datei geprüft wurde.
+_ATTACHMENT_DOCTYPES = [
+	"Item",
+	"Quotation",
+	"Sales Order",
+	"Sales Invoice",
+	"Delivery Note",
+	"Purchase Order",
+	"Purchase Invoice",
+]
+
+_COMMIT_EVERY = 200
+
+
 def cleanup_duplicate_attachments(doctype: str | None = None) -> dict:
 	"""Einmalige Bereinigung der Dubletten aus der Zeit vor dem `wc_id`-Dedup-Fix (siehe
 	Moduldocstring): je (attached_to_doctype, attached_to_name, file_url) werden alle File-
-	Datensätze bis auf den ältesten gelöscht. `doctype` optional zum Eingrenzen (z.B. nur
-	"Item"). Wird über einen Settings-Button ausgelöst, NICHT automatisch beim Sync - das ist
-	ein einmaliger, vom Nutzer bestätigter Aufräum-Schritt gegen echte Produktivdaten."""
-	filters: dict = {"attached_to_doctype": ("is", "set")}
-	if doctype:
-		filters["attached_to_doctype"] = doctype
+	Datensätze bis auf den ältesten gelöscht. `doctype` optional zum weiteren Eingrenzen
+	(z.B. nur "Item") - Default: alle `_ATTACHMENT_DOCTYPES`. Wird über einen Settings-Button
+	als Hintergrund-Job ausgelöst (siehe `weclapp_settings.py`), NICHT automatisch beim Sync -
+	das ist ein einmaliger, vom Nutzer bestätigter Aufräum-Schritt gegen echte Produktivdaten.
+
+	**Bugfix 2026-09-17:** committet jetzt alle `_COMMIT_EVERY` Löschungen statt erst ganz am
+	Ende - bei mehreren tausend Dubletten (live: >17.000 an Items allein) wäre sonst eine
+	einzige, sehr lange offene Transaktion nötig gewesen."""
+	filters: dict = {"attached_to_doctype": ("in", [doctype] if doctype else _ATTACHMENT_DOCTYPES)}
 	rows = frappe.get_all(
 		"File",
 		filters=filters,
@@ -146,5 +167,23 @@ def cleanup_duplicate_attachments(doctype: str | None = None) -> dict:
 		except Exception:
 			failed += 1
 			frappe.log_error(title=f"WeClapp Anhang-Bereinigung: {name} fehlgeschlagen", message=frappe.get_traceback())
+		if (deleted + failed) % _COMMIT_EVERY == 0:
+			frappe.db.commit()
 	frappe.db.commit()
 	return {"checked": len(rows), "duplicates_found": len(to_delete), "deleted": deleted, "failed": failed}
+
+
+def cleanup_duplicate_attachments_job() -> None:
+	"""Hintergrund-Job-Wrapper für den Settings-Button (siehe weclapp_settings.py) - bei
+	tausenden Dubletten (live: >17.000 an Items) dauert die eigentliche Bereinigung zu lange
+	für einen synchronen Web-Request (504 Gateway Timeout beim ersten Versuch 2026-09-17, siehe
+	`cleanup_duplicate_attachments()`-Docstring). Ergebnis landet im Error Log, da ein
+	Hintergrund-Job keine Desk-Meldung mehr direkt anzeigen kann."""
+	res = cleanup_duplicate_attachments()
+	frappe.log_error(
+		title="WeClapp Anhang-Bereinigung abgeschlossen",
+		message=(
+			f"{res['checked']} Dateien geprüft, {res['duplicates_found']} Dubletten gefunden, "
+			f"{res['deleted']} gelöscht, {res['failed']} fehlgeschlagen."
+		),
+	)

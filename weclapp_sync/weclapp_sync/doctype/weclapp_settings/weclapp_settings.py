@@ -77,6 +77,162 @@ _SKR03_NAMES = {
 }
 
 
+
+# ---------------------------------------------------------------------------------------------
+# Kontenanlage aus WeClapp - Modul-Funktionen (nicht Methoden), damit sie sowohl direkt als auch
+# aus einem Hintergrund-Job (frappe.enqueue mit dotted path) ohne Doc-Instanz aufrufbar sind.
+# Geteilt zwischen WeClappSettings.create_missing_ledger_accounts() (gezielt einzelne
+# Kontonummern) und .import_used_ledger_accounts() (Massen-Scan "jemals gebucht") - siehe deren
+# Docstrings für die Vorgeschichte (2026-09-16, Cross-Session-Anfrage von versand_integration).
+# ---------------------------------------------------------------------------------------------
+def _ledger_reference():
+	"""Lädt WeClapps kompletten Kontenrahmen (`ledgerAccount`, ~7739 Zeilen, nur 5 schmale
+	Felder - ca. 1-2 MB, einmalig für die Dauer eines Aufrufs im Speicher, wie schon die
+	kleineren Referenzlisten in populate_tax_mapping()/populate_custom_attribute_mapping() -
+	NICHT Teil des laufenden Datensatz-Syncs, wo Vollmaterialisierung tabu ist). Rückgabe:
+	(accountNumber -> Datensatz, parentAccountId -> [Kind-Datensätze])."""
+	from weclapp_sync.sync.settings import get_client
+
+	client = get_client()
+	client.open()
+	try:
+		ledger = list(
+			client.iter_all(
+				"ledgerAccount", properties="id,accountNumber,type,description,parentAccountId"
+			)
+		)
+	finally:
+		client.close()
+	by_number = {a["accountNumber"]: a for a in ledger if a.get("accountNumber")}
+	by_parent: dict[str, list[dict]] = {}
+	for a in ledger:
+		by_parent.setdefault(a.get("parentAccountId"), []).append(a)
+	return by_number, by_parent
+
+
+def _erpnext_sibling(acc: dict, by_parent: dict, company: str):
+	"""Geschwisterkonto (gleicher WeClapp-Elternknoten) in ERPNext - nur eindeutig, wenn ALLE in
+	ERPNext gefundenen Geschwister derselben Gruppe zugeordnet sind.
+
+	**Bugfix 2026-09-16 (im Probelauf entdeckt, vor dem Ausliefern):** eine erste Version nahm
+	einfach das ERSTE gefundene Geschwisterkonto - WeClapps Gruppe "B1660" ("Kassenbestand ...
+	Guthaben bei Kreditinstituten") bündelt aber live Kasse, Postbank, PayPal, Amazon Pay,
+	SumUp, eBay etc. in EINER Gruppe, während ERPNext das auf mehrere Untergruppen aufteilt
+	("Kasse - FT" vs. "Bank - FT" vs. ...) - "1270 N26" (ein Bankkonto) wäre damit fälschlich
+	unter "Kasse - FT"/`account_type "Cash"` gelandet, nur weil "1000 Kasse" zufällig zuerst in
+	der Geschwisterliste stand. Bei Uneinigkeit unter den gefundenen Geschwistern wird jetzt
+	NICHT geraten, sondern als mehrdeutig übersprungen (Rückmeldung nennt die widersprüchlichen
+	Gruppen)."""
+	matches = []
+	for other in by_parent.get(acc.get("parentAccountId"), []):
+		num = other.get("accountNumber") or ""
+		if not num.isdigit() or num == acc.get("accountNumber"):
+			continue
+		row = frappe.db.get_value(
+			"Account",
+			{"account_number": num, "company": company},
+			["name", "parent_account", "account_type"],
+			as_dict=True,
+		)
+		if row:
+			matches.append(row)
+	if not matches:
+		return None, "kein Geschwisterkonto in ERPNext gefunden"
+	parents = sorted({m.parent_account for m in matches})
+	if len(parents) > 1:
+		return None, f"mehrdeutig - Geschwisterkonten liegen in ERPNext unter verschiedenen Gruppen ({', '.join(parents)}), bitte manuell anlegen"
+	return matches[0], None
+
+
+def _create_ledger_accounts(accounts: list[dict], by_parent: dict, company: str) -> str:
+	"""Legt die übergebenen WeClapp-`ledgerAccount`-Datensätze in ERPNext an, wo möglich. Nur
+	echte Sachkonten (numerische `accountNumber`, `type=IMPERSONAL_ACCOUNT`) - WeClapps eigene
+	Gruppen-Knoten (alphanumerische Codes wie "B1660") werden NICHT als eigene ERPNext-Gruppen
+	angelegt, weil ERPNexts Kontenplan (SKR03-Import) eine eigene, andersartige Gruppenstruktur
+	mit sprechenden statt WeClapp-internen Namen hat (live geprüft: ERPNext-Konto "1000 - Kasse
+	- FT" hat keinen `account_number` an seiner Gruppe "Kasse - FT", WeClapp führt dieselbe
+	Gruppe unter dem Code "B1660")."""
+	existing_numbers = set(frappe.get_all("Account", filters={"company": company}, pluck="account_number"))
+	created, skipped = [], []
+	for acc in sorted(accounts, key=lambda a: a.get("accountNumber") or ""):
+		num = acc.get("accountNumber") or ""
+		if num in existing_numbers:
+			continue
+		if acc.get("type") != "IMPERSONAL_ACCOUNT" or not num.isdigit():
+			skipped.append(f"{num} ({acc.get('description')}) - kein normales Sachkonto")
+			continue
+		sibling, reason = _erpnext_sibling(acc, by_parent, company)
+		if not sibling:
+			skipped.append(f"{num} ({acc.get('description')}) - {reason}")
+			continue
+		try:
+			doc = frappe.new_doc("Account")
+			doc.account_number = num
+			doc.account_name = (acc.get("description") or num)[:140]
+			doc.company = company
+			doc.parent_account = sibling.parent_account
+			if sibling.account_type:
+				doc.account_type = sibling.account_type
+			doc.flags.ignore_permissions = True
+			doc.insert()
+			created.append(doc.name)
+			existing_numbers.add(num)
+		except Exception as e:
+			skipped.append(f"{num} ({acc.get('description')}): {e}")
+
+	frappe.db.commit()
+	out = f"{len(created)} Konten angelegt."
+	if created:
+		out += "\n" + "\n".join(created)
+	if skipped:
+		out += f"\n\nÜbersprungen ({len(skipped)}):\n" + "\n".join(skipped)
+	return out
+
+
+def create_missing_ledger_accounts_job(company: str, numbers: list[str]) -> None:
+	"""Hintergrund-Job-Wrapper für WeClappSettings.create_missing_ledger_accounts() (siehe
+	dort) - Ergebnis landet im Error Log, da ein Hintergrund-Job keine Desk-Meldung mehr direkt
+	anzeigen kann."""
+	by_number, by_parent = _ledger_reference()
+	accounts = []
+	for num in numbers:
+		acc = by_number.get(num)
+		accounts.append(acc if acc else {"accountNumber": num, "type": None, "description": None})
+	result = _create_ledger_accounts(accounts, by_parent, company)
+	frappe.log_error(title="WeClapp Kontenanlage abgeschlossen", message=result)
+
+
+def import_used_ledger_accounts_job(company: str) -> None:
+	"""Hintergrund-Job-Wrapper für WeClappSettings.import_used_ledger_accounts() (siehe dort) -
+	Ergebnis landet im Error Log."""
+	from weclapp_sync.sync.settings import get_client
+
+	_, by_parent = _ledger_reference()
+
+	client = get_client()
+	client.open()
+	try:
+		id_to_account = {
+			a["id"]: a
+			for a in client.iter_all("ledgerAccount", properties="id,accountNumber,type,description")
+		}
+		used_ids: set[str] = set()
+		for tx in client.iter_all("accountingTransaction", properties="id,transactionDetails.accountId"):
+			for td in tx.get("transactionDetails") or []:
+				acc_id = td.get("accountId")
+				if acc_id:
+					used_ids.add(acc_id)
+	finally:
+		client.close()
+
+	accounts = [
+		id_to_account[i]
+		for i in used_ids
+		if i in id_to_account and id_to_account[i].get("type") == "IMPERSONAL_ACCOUNT"
+	]
+	result = _create_ledger_accounts(accounts, by_parent, company)
+	frappe.log_error(title="WeClapp Kontenanlage abgeschlossen", message=result)
+
 class WeClappSettings(Document):
 	def validate(self):
 		self.ensure_object_type_rows()
@@ -286,112 +442,15 @@ class WeClappSettings(Document):
 		return out
 
 	# ------------------------------------------------------------------ Kontenanlage aus WeClapp
-	# Geteilte Bausteine für create_missing_ledger_accounts() (gezielt) UND
-	# import_used_ledger_accounts() (Massen-Scan "jemals gebucht") - siehe deren Docstrings für
-	# die Vorgeschichte (2026-09-16, Cross-Session-Anfrage von versand_integration).
-
-	def _ledger_reference(self):
-		"""Lädt WeClapps kompletten Kontenrahmen (`ledgerAccount`, ~7739 Zeilen, nur 5 schmale
-		Felder - ca. 1-2 MB, einmalig für die Dauer eines Button-Klicks im Speicher, wie schon
-		die kleineren Referenzlisten in populate_tax_mapping()/populate_custom_attribute_mapping()
-		- NICHT Teil des laufenden Datensatz-Syncs, wo Vollmaterialisierung tabu ist). Rückgabe:
-		(accountNumber -> Datensatz, parentAccountId -> [Kind-Datensätze])."""
-		from weclapp_sync.sync.settings import get_client
-
-		client = get_client()
-		client.open()
-		try:
-			ledger = list(
-				client.iter_all(
-					"ledgerAccount", properties="id,accountNumber,type,description,parentAccountId"
-				)
-			)
-		finally:
-			client.close()
-		by_number = {a["accountNumber"]: a for a in ledger if a.get("accountNumber")}
-		by_parent: dict[str, list[dict]] = {}
-		for a in ledger:
-			by_parent.setdefault(a.get("parentAccountId"), []).append(a)
-		return by_number, by_parent
-
-	def _erpnext_sibling(self, acc: dict, by_parent: dict):
-		"""Geschwisterkonto (gleicher WeClapp-Elternknoten) in ERPNext - nur eindeutig, wenn
-		ALLE in ERPNext gefundenen Geschwister derselben Gruppe zugeordnet sind.
-
-		**Bugfix 2026-09-16 (im Probelauf entdeckt, vor dem Ausliefern):** eine erste Version
-		nahm einfach das ERSTE gefundene Geschwisterkonto - WeClapps Gruppe "B1660"
-		("Kassenbestand ... Guthaben bei Kreditinstituten") bündelt aber live Kasse, Postbank,
-		PayPal, Amazon Pay, SumUp, eBay etc. in EINER Gruppe, während ERPNext das auf mehrere
-		Untergruppen aufteilt ("Kasse - FT" vs. "Bank - FT" vs. ...) - "1270 N26" (ein
-		Bankkonto) wäre damit fälschlich unter "Kasse - FT"/`account_type "Cash"` gelandet, nur
-		weil "1000 Kasse" zufällig zuerst in der Geschwisterliste stand. Bei Uneinigkeit unter
-		den gefundenen Geschwistern wird jetzt NICHT geraten, sondern als mehrdeutig
-		übersprungen (Rückmeldung nennt die widersprüchlichen Gruppen)."""
-		matches = []
-		for other in by_parent.get(acc.get("parentAccountId"), []):
-			num = other.get("accountNumber") or ""
-			if not num.isdigit() or num == acc.get("accountNumber"):
-				continue
-			row = frappe.db.get_value(
-				"Account",
-				{"account_number": num, "company": self.company},
-				["name", "parent_account", "account_type"],
-				as_dict=True,
-			)
-			if row:
-				matches.append(row)
-		if not matches:
-			return None, "kein Geschwisterkonto in ERPNext gefunden"
-		parents = sorted({m.parent_account for m in matches})
-		if len(parents) > 1:
-			return None, f"mehrdeutig - Geschwisterkonten liegen in ERPNext unter verschiedenen Gruppen ({', '.join(parents)}), bitte manuell anlegen"
-		return matches[0], None
-
-	def _create_ledger_accounts(self, accounts: list[dict], by_parent: dict) -> str:
-		"""Legt die übergebenen WeClapp-`ledgerAccount`-Datensätze in ERPNext an, wo möglich.
-		Nur echte Sachkonten (numerische `accountNumber`, `type=IMPERSONAL_ACCOUNT`) - WeClapps
-		eigene Gruppen-Knoten (alphanumerische Codes wie "B1660") werden NICHT als eigene
-		ERPNext-Gruppen angelegt, weil ERPNexts Kontenplan (SKR03-Import) eine eigene,
-		andersartige Gruppenstruktur mit sprechenden statt WeClapp-internen Namen hat (live
-		geprüft: ERPNext-Konto "1000 - Kasse - FT" hat keinen `account_number` an seiner Gruppe
-		"Kasse - FT", WeClapp führt dieselbe Gruppe unter dem Code "B1660")."""
-		existing_numbers = set(
-			frappe.get_all("Account", filters={"company": self.company}, pluck="account_number")
-		)
-		created, skipped = [], []
-		for acc in sorted(accounts, key=lambda a: a.get("accountNumber") or ""):
-			num = acc.get("accountNumber") or ""
-			if num in existing_numbers:
-				continue
-			if acc.get("type") != "IMPERSONAL_ACCOUNT" or not num.isdigit():
-				skipped.append(f"{num} ({acc.get('description')}) - kein normales Sachkonto")
-				continue
-			sibling, reason = self._erpnext_sibling(acc, by_parent)
-			if not sibling:
-				skipped.append(f"{num} ({acc.get('description')}) - {reason}")
-				continue
-			try:
-				doc = frappe.new_doc("Account")
-				doc.account_number = num
-				doc.account_name = (acc.get("description") or num)[:140]
-				doc.company = self.company
-				doc.parent_account = sibling.parent_account
-				if sibling.account_type:
-					doc.account_type = sibling.account_type
-				doc.flags.ignore_permissions = True
-				doc.insert()
-				created.append(doc.name)
-				existing_numbers.add(num)
-			except Exception as e:
-				skipped.append(f"{num} ({acc.get('description')}): {e}")
-
-		frappe.db.commit()
-		out = f"{len(created)} Konten angelegt."
-		if created:
-			out += "\n" + "\n".join(created)
-		if skipped:
-			out += f"\n\nÜbersprungen ({len(skipped)}):\n" + "\n".join(skipped)
-		return out
+	# Die eigentliche Logik steht als Modul-Funktionen VOR dieser Klasse (_ledger_reference()/
+	# _erpnext_sibling()/_create_ledger_accounts()) - nicht als Methoden, damit sie auch aus den
+	# Hintergrund-Job-Funktionen unten (frappe.enqueue mit einer schlanken Modul-Funktion statt
+	# eines Doc-Reloads) ohne Umweg aufrufbar sind. **Bugfix 2026-09-17:** beide Buttons liefen
+	# bisher synchron im Web-Request - `_ledger_reference()` allein braucht ~78 sequenzielle
+	# WeClapp-Aufrufe (7739 Zeilen `ledgerAccount`, seitenweise), `import_used_ledger_accounts`
+	# zusätzlich ~210 für `accountingTransaction` - lief beim ersten echten Klick in einen 504
+	# Gateway Timeout, siehe `cleanup_duplicate_attachments()` (derselbe Fix: als
+	# Hintergrund-Job, Ergebnis im Error Log statt als direkte Rückmeldung).
 
 	@frappe.whitelist()
 	def create_missing_ledger_accounts(self):
@@ -419,15 +478,17 @@ class WeClappSettings(Document):
 				"(z.B. 1030, 1270)."
 			)
 
-		by_number, by_parent = self._ledger_reference()
-		accounts = []
-		for num in numbers:
-			acc = by_number.get(num)
-			if acc:
-				accounts.append(acc)
-			else:
-				accounts.append({"accountNumber": num, "type": None, "description": None})
-		return self._create_ledger_accounts(accounts, by_parent)
+		frappe.enqueue(
+			"weclapp_sync.weclapp_sync.doctype.weclapp_settings.weclapp_settings.create_missing_ledger_accounts_job",
+			queue="long",
+			timeout=1800,
+			company=self.company,
+			numbers=numbers,
+		)
+		return (
+			'Wird im Hintergrund angelegt - Ergebnis landet im Error Log '
+			'("WeClapp Kontenanlage abgeschlossen").'
+		)
 
 	@frappe.whitelist()
 	def import_used_ledger_accounts(self):
@@ -446,41 +507,20 @@ class WeClappSettings(Document):
 		bestehende Anlage (`erpnext_helpers.ensure_personal_account()`, pro Kunde/Lieferant
 		beim customer.py/supplier.py-Sync) und werden hier ignoriert. Nur
 		`type == IMPERSONAL_ACCOUNT` (echte Sachkonten - live: 129, davon 70 in ERPNext
-		fehlend) wird betrachtet.
-
-		Streamt `accountingTransaction` seitenweise (Feldreduktion auf
-		`id,transactionDetails.accountId` - keine vollen Belege im Speicher) und sammelt nur
-		die referenzierten `accountId`s in einem Set, genau wie überall sonst im Sync nie die
-		volle Entität am Stück gehalten wird."""
+		fehlend) wird betrachtet."""
 		if not self.company:
 			frappe.throw("Bitte zuerst die Company setzen.")
 
-		from weclapp_sync.sync.settings import get_client
-
-		_, by_parent = self._ledger_reference()
-
-		client = get_client()
-		client.open()
-		try:
-			id_to_account = {
-				a["id"]: a
-				for a in client.iter_all("ledgerAccount", properties="id,accountNumber,type,description")
-			}
-			used_ids: set[str] = set()
-			for tx in client.iter_all("accountingTransaction", properties="id,transactionDetails.accountId"):
-				for td in tx.get("transactionDetails") or []:
-					acc_id = td.get("accountId")
-					if acc_id:
-						used_ids.add(acc_id)
-		finally:
-			client.close()
-
-		accounts = [
-			id_to_account[i]
-			for i in used_ids
-			if i in id_to_account and id_to_account[i].get("type") == "IMPERSONAL_ACCOUNT"
-		]
-		return self._create_ledger_accounts(accounts, by_parent)
+		frappe.enqueue(
+			"weclapp_sync.weclapp_sync.doctype.weclapp_settings.weclapp_settings.import_used_ledger_accounts_job",
+			queue="long",
+			timeout=1800,
+			company=self.company,
+		)
+		return (
+			'Scan läuft im Hintergrund (kann einige Minuten dauern) - Ergebnis landet im '
+			'Error Log ("WeClapp Kontenanlage abgeschlossen").'
+		)
 
 	@frappe.whitelist()
 	def populate_price_list_mappings(self):
@@ -643,13 +683,20 @@ class WeClappSettings(Document):
 	def cleanup_duplicate_attachments(self):
 		"""Einmalige Bereinigung der Anhang-Dubletten aus der Zeit vor dem `wc_id`-Dedup-Fix
 		(siehe `_attachments.py`). Bewusst ein separater, vom Nutzer ausgelöster Button - kein
-		automatischer Teil des Syncs, weil er in ERPNext löscht (Produktivdaten)."""
-		from weclapp_sync.sync.mappers._attachments import cleanup_duplicate_attachments
+		automatischer Teil des Syncs, weil er in ERPNext löscht (Produktivdaten).
 
-		res = cleanup_duplicate_attachments()
+		**Bugfix 2026-09-17:** lief bisher synchron im Web-Request - bei tausenden Dubletten
+		(live: >17.000 an Items) in einen 504 Gateway Timeout gelaufen, ohne auch nur eine
+		Datei zu prüfen. Jetzt als Hintergrund-Job (wie der Vollimport), Ergebnis landet im
+		Error Log ("WeClapp Anhang-Bereinigung abgeschlossen")."""
+		frappe.enqueue(
+			"weclapp_sync.sync.mappers._attachments.cleanup_duplicate_attachments_job",
+			queue="long",
+			timeout=3600,
+		)
 		return (
-			f"{res['checked']} Dateien geprüft, {res['duplicates_found']} Dubletten gefunden, "
-			f"{res['deleted']} gelöscht, {res['failed']} fehlgeschlagen."
+			'Bereinigung läuft im Hintergrund - Ergebnis landet im Error Log '
+			'("WeClapp Anhang-Bereinigung abgeschlossen").'
 		)
 
 	# ------------------------------------------------------------------ Zusatzfelder
