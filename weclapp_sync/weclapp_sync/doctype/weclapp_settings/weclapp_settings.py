@@ -161,6 +161,53 @@ def _erpnext_sibling(acc: dict, by_parent: dict, company: str):
 	return matches[0], None
 
 
+def _prefix_sibling(acc: dict, company: str, exclude_parents: set[str]):
+	"""Fallback-Geschwistersuche über die Kontonummer, wenn `_erpnext_sibling()` (WeClapps
+	eigener Elternknoten) NICHTS findet (nicht bei "mehrdeutig" - eine bereits erkannte
+	Mehrdeutigkeit wird nicht durch einen zweiten, gröberen Versuch übergangen).
+
+	Eingeführt 2026-09-18, Nutzer-Wunsch nach dem Live-Fund: selbst nach dem Bugfix in
+	`_erpnext_sibling()` (Personenkonten raus) fand die Elternknoten-Suche bei ALLEN 70 aus
+	`accountingTransaction` gescannten Konten kein Geschwister - WeClapps SKR03-Vorlage bildet
+	die Hierarchie offenbar sehr fein/tief ab (Klasse -> Gruppe -> Untergruppe -> Konto), viele
+	Sachkonten hängen an einem sehr spezifischen, in ERPNexts schlanker Teilmenge (nur
+	tatsächlich genutzte Konten) praktisch nie zufällig auch besetzten Zweig.
+
+	SKR03 ist aber eine standardisierte Nummerierung, die WeClapp und ERPNexts eigener
+	Kontenplan-Import TEILEN - die Kontonummer selbst trägt also schon eine fachliche
+	Gruppierung, unabhängig von WeClapps interner Baumtiefe. Testet Nummernpräfixe von 3 auf 2
+	Ziffern (nicht bis auf 1 Ziffer - eine ganze Kontenklasse wie "4" wäre zu grob, würde
+	fachlich sehr unterschiedliche Konten zusammenwerfen). Dieselbe Einstimmigkeits-Regel wie
+	`_erpnext_sibling()`: uneinige Treffer -> mehrdeutig, nicht geraten. `exclude_parents`
+	(Debitoren-/Kreditoren-Sammelgruppen) schließt Personenkonten aus denselben Gründen aus wie
+	der `IMPERSONAL_ACCOUNT`-Filter in `_ledger_reference()` - Personenkontonummern sind
+	ebenfalls rein numerisch und würden sonst über den Nummernpräfix genauso fälschlich als
+	Geschwister erscheinen."""
+	num = acc.get("accountNumber") or ""
+	if not num.isdigit():
+		return None, None
+	for length in (3, 2):
+		if len(num) <= length:
+			continue
+		prefix = num[:length]
+		rows = frappe.get_all(
+			"Account",
+			filters={"company": company, "account_number": ("like", f"{prefix}%")},
+			fields=["name", "parent_account", "account_type", "account_number"],
+		)
+		matches = [r for r in rows if r.account_number != num and r.parent_account not in exclude_parents]
+		if not matches:
+			continue
+		parents = sorted({m.parent_account for m in matches})
+		if len(parents) > 1:
+			return None, (
+				f"mehrdeutig (Nummernpräfix {prefix}) - Geschwisterkonten liegen in ERPNext unter "
+				f"verschiedenen Gruppen ({', '.join(parents)}), bitte manuell anlegen"
+			)
+		return matches[0], None
+	return None, None
+
+
 def _create_ledger_accounts(accounts: list[dict], by_parent: dict, company: str) -> str:
 	"""Legt die übergebenen WeClapp-`ledgerAccount`-Datensätze in ERPNext an, wo möglich. Nur
 	echte Sachkonten (numerische `accountNumber`, `type=IMPERSONAL_ACCOUNT`) - WeClapps eigene
@@ -168,8 +215,14 @@ def _create_ledger_accounts(accounts: list[dict], by_parent: dict, company: str)
 	angelegt, weil ERPNexts Kontenplan (SKR03-Import) eine eigene, andersartige Gruppenstruktur
 	mit sprechenden statt WeClapp-internen Namen hat (live geprüft: ERPNext-Konto "1000 - Kasse
 	- FT" hat keinen `account_number` an seiner Gruppe "Kasse - FT", WeClapp führt dieselbe
-	Gruppe unter dem Code "B1660")."""
+	Gruppe unter dem Code "B1660").
+
+	**Erweiterung 2026-09-18:** findet `_erpnext_sibling()` (WeClapps eigener Elternknoten)
+	nichts (nicht bei "mehrdeutig"), greift zusätzlich `_prefix_sibling()` als Fallback über die
+	SKR03-Kontonummer selbst - siehe dessen Docstring für den Live-Fund, der das nötig machte."""
 	existing_numbers = set(frappe.get_all("Account", filters={"company": company}, pluck="account_number"))
+	settings = frappe.get_cached_doc("WeClapp Settings")
+	exclude_parents = {settings.debtor_parent_account, settings.creditor_parent_account} - {None, ""}
 	created, skipped = [], []
 	for acc in sorted(accounts, key=lambda a: a.get("accountNumber") or ""):
 		num = acc.get("accountNumber") or ""
@@ -179,6 +232,12 @@ def _create_ledger_accounts(accounts: list[dict], by_parent: dict, company: str)
 			skipped.append(f"{num} ({acc.get('description')}) - kein normales Sachkonto")
 			continue
 		sibling, reason = _erpnext_sibling(acc, by_parent, company)
+		if not sibling and reason == "kein Geschwisterkonto in ERPNext gefunden":
+			sibling, prefix_reason = _prefix_sibling(acc, company, exclude_parents)
+			if sibling:
+				reason = None
+			elif prefix_reason:
+				reason = prefix_reason
 		if not sibling:
 			skipped.append(f"{num} ({acc.get('description')}) - {reason}")
 			continue
