@@ -3,6 +3,49 @@
 Projektinterne Referenz. Diese Datei nach jeder Session mit neuen Erkenntnissen aktualisieren
 (Konvention aus dem Ursprungsprojekt, siehe unten).
 
+### Increment 24 (2026-09-17/18): Hintergrund-Job-Härtung + Versandabsender/Marke aus WeClapp
+- **Anhang-Bereinigung/Kontenanlage robuster gemacht:** fehlender `frappe.db.rollback()` nach
+  einem DB-Fehler (live: "Lock wait timeout exceeded") ließ tausende Datei-Löschungen
+  kaskadierend sofort scheitern statt nur die eine echt gesperrte - jetzt behoben
+  (`_attachments.py`). Neue Cache-Sperre verhindert parallel laufende, sich gegenseitig
+  blockierende Bereinigungs-Läufe (ein 504 auf der HTTP-Antwort stoppt den Hintergrund-Job
+  NICHT, mehrere Klicks nach einem Timeout führten live zu Karambolagen).
+- **Kontenanlage: Personenkonten verfälschten die Geschwisterkonto-Suche** - `by_parent` enthielt
+  auch WeClapps `PERSONAL_ACCOUNT`-Platzhalter, matchte deren Nummern gegen die ~6200 in ERPNext
+  individuell angelegten Debitoren-/Kreditorenkonten (liegen alle unter genau zwei Sammelgruppen)
+  - machte live JEDES Sachkonto künstlich "mehrdeutig". Gefixt (`_ledger_reference()` filtert auf
+    `IMPERSONAL_ACCOUNT`). **Zusätzlich:** selbst danach fand die Suche über WeClapps eigenen
+  Elternknoten bei allen 70 gescannten Konten kein Geschwister (WeClapps SKR03-Vorlage bildet die
+  Hierarchie zu fein/tief ab, ERPNexts schlanker Kontenplan trifft das kaum zufällig). Neuer
+  Fallback `_prefix_sibling()`: sucht stattdessen über die SKR03-Kontonummer selbst (3- dann
+  2-stelliges Präfix) - beide Systeme teilen dieselbe Nummerierung. **Noch nicht erneut gegen die
+  Live-Instanz mit dem Präfix-Fallback getestet.**
+- **Anhänge ohne `wc_id` (Altbestand von vor dem Dedup-Fix) duplizierten sich bei jedem
+  künftigen Sync neu** (Live-Fund: Artikel 51003) - `_existing_wc_ids()` erkennt sie nie, jeder
+  Touch lud sie erneut herunter. Neue `_match_legacy_file()` findet den Alt-Anhang über den
+  WeClapp-Dateinamen (Präfix vor Frappes Hash-Suffix) und versorgt ihn nur noch mit `wc_id` nach,
+  statt neu herunterzuladen - schließt die Lücke dauerhaft (nicht nur einmalig über die
+  Bereinigung).
+- **`vi_versandabsender` (Marke/Kopfbogen/Label-Absender) aus WeClapp-Vertriebsweg abgeleitet** -
+  Nutzer-Wunsch: das Feld stand bei keinem Kunden. Jeder der 17 bekannten Preiskanäle
+  (NET1-9/GROSS1-8) gehört zu einer von 5 Marken (FranceTec, Gisbert-Frech-Verlag,
+  kfz-isolierung.de, Federkugel.store, schmelzkammer.de) - fest hinterlegt in
+  `_CHANNEL_VERSANDABSENDER` (`weclapp_settings.py`), zweimal übereinstimmend bestätigt
+  (Vertriebsweg-Liste des Nutzers + unsere eigenen `price_list`-Namen). NET10 sowie zwei weitere
+  Versandabsender-Stammdaten (EntenFrisch/LesDeux) auf Nutzer-Wunsch bewusst ausgeklammert. Neue
+  Spalte `versandabsender` in `WeClapp Price List Mapping`, vorbefüllt von
+  `populate_price_list_mappings()` (nur wenn leer). `erpnext_helpers.versandabsender_for_channel()`
+  löst WeClapp `salesChannel` darüber auf; `customer.py`/`sales_order.py` setzen es aus dem
+  eigenen `salesChannel`, `sales_invoice.py`/`shipment.py` fallen auf den verknüpften Auftrag
+  zurück. Überall nur befüllt, wenn das ERPNext-Feld noch leer ist (keine Überschreibung
+  manueller Korrekturen).
+  **Wichtig: Das Feld `vi_versandabsender` sowie die Doctype `Versandabsender` gehören NICHT zu
+  `weclapp_sync`, sondern zur separaten "ERPNext Versand"-App (parallele Session/Integration für
+  DHL/DPD/Deutsche Post, siehe auch Increment 21). Diese ganze Funktion greift nur, wenn diese
+  App installiert ist und ihre Versandabsender-Stammdaten (Adresse, Kopfbogen, DHL-
+  Absendernummern) gepflegt sind - ohne sie bleibt die neue Mapping-Spalte wirkungslos.**
+  **Noch nicht gegen die Live-Instanz getestet.**
+
 ### Increment 23 (2026-09-16): Kundenbestellnummer (po_no) fehlte + Feld-Audit über alle Entitäten
 Nutzer-Fund: bei Auftrag 2026AU2297 ist WeClapps `orderNumberAtCustomer` ("8591512") gesetzt,
 ERPNexts `po_no` ("Customer's Purchase Order") blieb aber leer - `sales_order.py` hat das Feld

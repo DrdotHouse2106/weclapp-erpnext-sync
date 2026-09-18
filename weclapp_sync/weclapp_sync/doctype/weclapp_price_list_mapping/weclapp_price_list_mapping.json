@@ -63,7 +63,7 @@
   },
   {
    "columns": 2,
-   "description": "Marke/Absender (Doctype \"Versandabsender\" aus der Versand-App) - wird auf Kunde/Auftrag/Rechnung/Lieferschein als vi_versandabsender gesetzt, steuert dort Kopfbogen und Absenderadresse auf Versandlabels.",
+   "description": "Marke/Absender - wird auf Kunde/Auftrag/Rechnung/Lieferschein als vi_versandabsender gesetzt, steuert dort Kopfbogen und Absenderadresse auf Versandlabels. Funktioniert nur zusammen mit der separaten \"ERPNext Versand\"-Integration (die legt die Doctype \"Versandabsender\" sowie das Feld vi_versandabsender an) - ohne die App bleibt diese Spalte wirkungslos.",
    "fieldname": "versandabsender",
    "fieldtype": "Link",
    "in_list_view": 1,
