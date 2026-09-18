@@ -45,6 +45,30 @@ def _existing_wc_ids(doctype: str, name: str) -> set[str]:
 	}
 
 
+def _match_legacy_file(doctype: str, name: str, filename: str) -> str | None:
+	"""Findet ein bestehendes File OHNE `wc_id`, dessen Dateiname zum WeClapp-Dateinamen passt -
+	für Alt-Anhänge aus der Zeit vor dem `wc_id`-Dedup-Fix (siehe Moduldocstring). Frappe hängt
+	beim Speichern einen Hash-Suffix an (`"4562_51003.jpg"` -> `"4562_51003-b12e8b4d.jpg"`),
+	daher Präfix- statt Exakt-Vergleich auf den Dateinamen-Stamm vor der Endung.
+
+	**Bugfix 2026-09-18 (Live-Fund, Artikel 51003):** ohne diesen Abgleich erkennt
+	`_existing_wc_ids()` einen Alt-Anhang nie (kein `wc_id` gesetzt) - jeder künftige Sync, der
+	den Datensatz berührt, lud ihn deshalb einmalig erneut herunter und legte eine zusätzliche
+	Dublette an (die zwar die periodische Bereinigung wieder einsammelt, aber strukturell bei
+	JEDEM Alt-Anhang erneut passiert wäre). Jetzt wird der Alt-Anhang stattdessen direkt beim
+	ersten Kontakt mit seinem `wc_id` nachversorgt, kein Download/keine neue Dublette nötig."""
+	stem = filename.rsplit(".", 1)[0]
+	rows = frappe.get_all(
+		"File",
+		filters={"attached_to_doctype": doctype, "attached_to_name": name, "file_name": ("like", f"{stem}%")},
+		fields=["name", "wc_id"],
+	)
+	for r in rows:
+		if not r.wc_id:
+			return r.name
+	return None
+
+
 def attach_weclapp_documents(client, weclapp_doctype, weclapp_id, target_doctype: str, target_name: str) -> None:
 	"""Alle an einen WeClapp-Beleg gehängten Dokumente (i.d.R. das PDF, generische `document`-
 	Entität) als Frappe-File am Zieldokument anhängen. No-op ohne Client/ID/Dokumente oder wenn
@@ -67,6 +91,11 @@ def attach_weclapp_documents(client, weclapp_doctype, weclapp_id, target_doctype
 		filename = d.get("name")
 		doc_id = d.get("id")
 		if not (filename and doc_id) or doc_id in existing:
+			continue
+		legacy_name = _match_legacy_file(target_doctype, target_name, filename)
+		if legacy_name:
+			frappe.db.set_value("File", legacy_name, "wc_id", doc_id, update_modified=False)
+			existing.add(doc_id)
 			continue
 		try:
 			content = b"".join(client.iter_document_content(doc_id))
@@ -98,6 +127,14 @@ def attach_article_images(client, record: dict, item_code: str) -> None:
 		filename = img.get("fileName")
 		image_id = img.get("id")
 		if not (filename and image_id) or image_id in existing:
+			continue
+		legacy_name = _match_legacy_file("Item", item_code, filename)
+		if legacy_name:
+			frappe.db.set_value("File", legacy_name, "wc_id", image_id, update_modified=False)
+			existing.add(image_id)
+			if img.get("mainImage"):
+				file_url = frappe.db.get_value("File", legacy_name, "file_url")
+				frappe.db.set_value("Item", item_code, "image", file_url)
 			continue
 		try:
 			content = b"".join(client.iter_article_image_content(article_id, image_id))
