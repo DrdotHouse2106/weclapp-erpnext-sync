@@ -86,6 +86,22 @@ def territory_for_country(country: str | None) -> str | None:
 	return default
 
 
+def versandabsender_for_channel(sales_channel: str | None) -> str | None:
+	"""WeClapp `salesChannel` (z.B. "GROSS7" für Amazon) -> ERPNext `Versandabsender` (Marke),
+	über die Zuordnung in `WeClapp Settings.price_list_mappings` (Spalte `versandabsender`,
+	siehe `weclapp_settings.populate_price_list_mappings()`). Steuert bei der "ERPNext Versand"-
+	App (Custom Field `vi_versandabsender` auf Customer/Sales Order/Sales Invoice/Delivery Note,
+	fremde Doctype "Versandabsender") Kopfbogen und Absenderadresse auf Versandlabels.
+	Nutzer-Wunsch 2026-09-18. `None` bei fehlendem/nicht zugeordnetem Kanal - kein Rateversuch,
+	die andere App entscheidet dann selbst über ihren eigenen Default."""
+	if not sales_channel:
+		return None
+	for row in _settings().price_list_mappings:
+		if row.sales_channel == sales_channel:
+			return link_or_none("Versandabsender", row.versandabsender)
+	return None
+
+
 def country_name(country_code: str | None) -> str | None:
 	"""WeClapp countryCode (ISO 3166-1 alpha-2) -> ERPNext-Country-Name."""
 	if not country_code:

@@ -97,6 +97,14 @@ class CustomerMapper(pc.PartyCacheMixin, Mapper):
 			"wc_opt_in_sms": 1 if record.get("optInSms") else 0,
 		}
 		fields.update(ca.resolve(record, self.custom_attribute_definitions(), self.custom_attribute_field_map()))
+		# vi_versandabsender gehört der "ERPNext Versand"-App (Custom Field, steuert Kopfbogen +
+		# Absenderadresse auf Versandlabels) - nur befüllen, wenn dort noch nichts steht, damit
+		# eine manuelle Korrektur dort nicht bei jedem Sync wieder überschrieben wird. Nutzer-
+		# Wunsch 2026-09-18, Herleitung aus WeClapps salesChannel über price_list_mappings.
+		if not (existing and existing.get("vi_versandabsender")):
+			versandabsender = h.versandabsender_for_channel(record.get("salesChannel"))
+			if versandabsender:
+				fields["vi_versandabsender"] = versandabsender
 		return fields
 
 	# ------------------------------------------------------------------ voller Graph

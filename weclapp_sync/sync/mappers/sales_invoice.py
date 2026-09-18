@@ -124,6 +124,17 @@ class SalesInvoiceMapper(TransactionMapper):
 			if po_no:
 				doc.po_no = po_no
 
+		# vi_versandabsender ("ERPNext Versand"-App, Kopfbogen + Absenderadresse auf Versand-
+		# labels) - nur befüllen, wenn noch leer. salesInvoice führt salesChannel evtl. nicht
+		# selbst (ungeprüft) -> Fallback auf den verknüpften Auftrag, analog zu po_no oben.
+		# Nutzer-Wunsch 2026-09-18.
+		if not doc.get("vi_versandabsender"):
+			versandabsender = h.versandabsender_for_channel(record.get("salesChannel"))
+			if not versandabsender and son:
+				versandabsender = frappe.db.get_value("Sales Order", son, "vi_versandabsender")
+			if versandabsender:
+				doc.vi_versandabsender = versandabsender
+
 		if settings.default_sales_taxes_template and frappe.db.exists(
 			"Sales Taxes and Charges Template", settings.default_sales_taxes_template
 		):

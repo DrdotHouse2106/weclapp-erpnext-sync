@@ -146,6 +146,17 @@ class ShipmentMapper(Mapper):
 		if son and frappe.db.exists("Sales Order", son):
 			doc.wc_sales_order = son
 
+		# vi_versandabsender ("ERPNext Versand"-App, Kopfbogen + Absenderadresse auf Versand-
+		# labels) - gerade hier am Lieferschein besonders relevant (steuert die Versandmarke
+		# selbst). Nur befüllen, wenn noch leer. shipment führt salesChannel evtl. nicht selbst
+		# (ungeprüft) -> Fallback auf den verknüpften Auftrag. Nutzer-Wunsch 2026-09-18.
+		if not doc.get("vi_versandabsender"):
+			versandabsender = h.versandabsender_for_channel(record.get("salesChannel"))
+			if not versandabsender and son:
+				versandabsender = frappe.db.get_value("Sales Order", son, "vi_versandabsender")
+			if versandabsender:
+				doc.vi_versandabsender = versandabsender
+
 		# WeClapp führt am Shipment eine EIGENE Liefer-/Rechnungsadresse (`recipientAddress`/
 		# `invoiceAddress`) - die kann von der beim Kunden hinterlegten Standardadresse abweichen
 		# (z.B. einmalige Lieferung an eine andere Anschrift). Ohne das explizit zu setzen, zieht

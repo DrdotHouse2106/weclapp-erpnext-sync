@@ -23,6 +23,34 @@ _TAX_FIELD_MAP = {
 
 _PURCHASE_TAX_TYPES = {"INPUT_VAT", "INPUT_VAT_REVERSED", "IMPORT_VAT", "IMPORT_SALES_TAX"}
 
+# WeClapp-Vertriebsweg -> Marke ("Versandabsender", Doctype der "ERPNext Versand"-App) - steuert
+# dort Kopfbogen + Absenderadresse auf Versandlabels. Nutzer-Vorgabe 2026-09-18 (Vertriebswege-
+# Liste aus WeClapp), zweimal übereinstimmend bestätigt: gegen die Vertriebsweg-Bezeichnungen aus
+# der Nutzerliste UND gegen unsere eigenen, schon länger bestehenden `price_list`-Namen in
+# `price_list_mappings` (z.B. "Amazon" -> GROSS7, "kfz-isolierung.de Brutto" -> GROSS3). Bewusst
+# NICHT vollständig - WeClapp kennt noch "NET10" (in der Instanz bisher ohne Marke/ohne Daten,
+# taucht auch in `articlePrice` nie auf) sowie zwei weitere Versandabsender-Stammdaten
+# ("EntenFrisch"/"LesDeux"), die der Nutzer explizit für diese Zuordnung ausgeschlossen hat.
+_CHANNEL_VERSANDABSENDER = {
+	"GROSS1": "FranceTec",
+	"GROSS2": "FranceTec",
+	"GROSS3": "kfz-isolierung.de",
+	"GROSS4": "Federkugel.store",
+	"GROSS5": "Gisbert-Frech-Verlag",
+	"GROSS6": "FranceTec",
+	"GROSS7": "FranceTec",
+	"GROSS8": "schmelzkammer.de",
+	"NET1": "FranceTec",
+	"NET2": "FranceTec",
+	"NET3": "FranceTec",
+	"NET4": "Gisbert-Frech-Verlag",
+	"NET5": "Gisbert-Frech-Verlag",
+	"NET6": "FranceTec",
+	"NET7": "FranceTec",
+	"NET8": "FranceTec",
+	"NET9": "kfz-isolierung.de",
+}
+
 
 def _is_purchase_tax(t: dict) -> bool:
 	tt = t.get("taxType") or ""
@@ -603,7 +631,12 @@ class WeClappSettings(Document):
 		"""Legt je WeClapp-Preiskanal eine Zeile an. Kanal-Universum: NET1..NET9 + GROSS1..GROSS8
 		(WeClapp-Standard) vereinigt mit den in `articlePrice` tatsächlich vorkommenden.
 		Legt/benennt die ERPNext-Preisliste nach `channel_label` und setzt an ihr den
-		Brutto-Haken (`custom_price_includes_tax`, falls das Feld existiert)."""
+		Brutto-Haken (`custom_price_includes_tax`, falls das Feld existiert).
+
+		Befüllt außerdem `versandabsender` aus `_CHANNEL_VERSANDABSENDER` - aber nur, wenn die
+		Zeile noch leer ist (überschreibt keine manuelle Nutzer-Zuordnung) UND der referenzierte
+		Versandabsender-Datensatz tatsächlich existiert (die Doctype gehört einer anderen App,
+		könnte fehlen)."""
 		from weclapp_sync.sync.settings import get_client
 
 		client = get_client()
@@ -631,6 +664,10 @@ class WeClappSettings(Document):
 				added += 1
 			row.prices_include_tax = 1 if is_gross else 0
 			self._sync_channel_price_list(row)
+			if not row.versandabsender:
+				suggested = _CHANNEL_VERSANDABSENDER.get(channel)
+				if suggested and frappe.db.exists("Versandabsender", suggested):
+					row.versandabsender = suggested
 
 		self.save()
 		return (

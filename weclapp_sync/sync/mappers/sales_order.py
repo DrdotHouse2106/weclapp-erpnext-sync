@@ -94,6 +94,14 @@ class SalesOrderMapper(TransactionMapper):
 		if qn and frappe.db.exists("Quotation", qn):
 			doc.wc_quotation = qn
 
+		# vi_versandabsender gehört der "ERPNext Versand"-App (Kopfbogen + Absenderadresse auf
+		# Versandlabels) - nur befüllen, wenn noch leer, damit eine manuelle Korrektur nicht bei
+		# jedem Sync überschrieben wird. Nutzer-Wunsch 2026-09-18.
+		if not doc.get("vi_versandabsender"):
+			versandabsender = h.versandabsender_for_channel(record.get("salesChannel"))
+			if versandabsender:
+				doc.vi_versandabsender = versandabsender
+
 		if settings.default_sales_taxes_template and frappe.db.exists(
 			"Sales Taxes and Charges Template", settings.default_sales_taxes_template
 		):

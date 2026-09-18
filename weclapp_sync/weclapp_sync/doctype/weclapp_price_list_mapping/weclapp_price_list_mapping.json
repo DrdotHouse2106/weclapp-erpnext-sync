@@ -10,7 +10,8 @@
   "enabled",
   "column_break_1",
   "price_list",
-  "prices_include_tax"
+  "prices_include_tax",
+  "versandabsender"
  ],
  "fields": [
   {
@@ -59,6 +60,15 @@
    "in_list_view": 1,
    "label": "Brutto (inkl. Steuer)",
    "read_only": 1
+  },
+  {
+   "columns": 2,
+   "description": "Marke/Absender (Doctype \"Versandabsender\" aus der Versand-App) - wird auf Kunde/Auftrag/Rechnung/Lieferschein als vi_versandabsender gesetzt, steuert dort Kopfbogen und Absenderadresse auf Versandlabels.",
+   "fieldname": "versandabsender",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Versandabsender",
+   "options": "Versandabsender"
   }
  ],
  "index_web_pages_for_search": 1,
