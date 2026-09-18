@@ -19,6 +19,7 @@ gezählt, in "WeClapp Sync Log" protokolliert, dann geht es weiter.
 
 from __future__ import annotations
 
+import time
 import traceback
 from dataclasses import dataclass, field
 
@@ -386,20 +387,40 @@ def _record_ref(spec: registry.ObjectTypeSpec, record: dict) -> str:
 # ---------------------------------------------------------------------------
 # Fortschritt / Watermark in der Objekttyp-Zeile der Settings
 # ---------------------------------------------------------------------------
+_DEADLOCK_MAX_ATTEMPTS = 3
+
+
 def _save_progress(key: str, run_name: str, page_no: int) -> None:
-	frappe.db.set_value(
-		"WeClapp Sync Object Type",
-		{"parent": "WeClapp Settings", "object_type": key},
-		{"progress_run": run_name, "progress_page": page_no},
-		update_modified=False,
-	)
-	# Heartbeat (Bugfix 2026-09-16): scheduler.recover_stale_runs() prueft
-	# "WeClapp Sync Run".modified - das Run-Doc selbst wird sonst nur am Typ-ENDE angefasst
-	# (_append_run_type_summary). Ein einzelner Objekttyp > 1h (z.B. article mit vielen
-	# Bild-Downloads) wuerde den Run sonst faelschlich mitten im Lauf als "stale" markieren,
-	# obwohl er noch aktiv Seiten verarbeitet - _has_running_run() saehe ihn dann faelschlich
-	# nicht mehr als laufend, ein Scheduler-Tick koennte parallel einen Delta-Sync anstossen.
-	frappe.db.set_value("WeClapp Sync Run", run_name, "modified", now_datetime(), update_modified=False)
+	"""Speichert Seiten-Fortschritt + Heartbeat.
+
+	**Bugfix 2026-09-18 (Live-Fund):** live als `QueryDeadlockError` (MySQL 1213) auf genau
+	dieser Zeile aufgetreten - zwei Transaktionen (vermutlich zwei sich zeitlich überlappende
+	Läufe, die beide denselben Objekttyp bearbeiteten) wollten sich überschneidende Zeilen in
+	unterschiedlicher Reihenfolge sperren. Anders als ein Lock-Wait-Timeout (sustained
+	Blockade) ist ein Deadlock per MySQL-Definition sofort erkannt und die verlierende
+	Transaktion sofort zurückgerollt - ein kurzer Retry reicht üblicherweise, kein Hinweis auf
+	einen dauerhaft blockierten Prozess."""
+	for attempt in range(_DEADLOCK_MAX_ATTEMPTS):
+		try:
+			frappe.db.set_value(
+				"WeClapp Sync Object Type",
+				{"parent": "WeClapp Settings", "object_type": key},
+				{"progress_run": run_name, "progress_page": page_no},
+				update_modified=False,
+			)
+			# Heartbeat: scheduler.recover_stale_runs() prueft "WeClapp Sync Run".modified - das
+			# Run-Doc selbst wird sonst nur am Typ-ENDE angefasst (_append_run_type_summary). Ein
+			# einzelner Objekttyp > 1h (z.B. article mit vielen Bild-Downloads) wuerde den Run
+			# sonst faelschlich mitten im Lauf als "stale" markieren, obwohl er noch aktiv Seiten
+			# verarbeitet - _has_running_run() saehe ihn dann faelschlich nicht mehr als laufend,
+			# ein Scheduler-Tick koennte parallel einen Delta-Sync anstossen.
+			frappe.db.set_value("WeClapp Sync Run", run_name, "modified", now_datetime(), update_modified=False)
+			return
+		except frappe.exceptions.QueryDeadlockError:
+			frappe.db.rollback()
+			if attempt == _DEADLOCK_MAX_ATTEMPTS - 1:
+				raise
+			time.sleep(0.5 * (attempt + 1))
 
 
 def _finish_type(key: str, watermark_ms: int) -> None:
