@@ -130,7 +130,9 @@ class SalesInvoiceMapper(TransactionMapper):
 		# Nutzer-Wunsch 2026-09-18.
 		if not doc.get("vi_versandabsender"):
 			versandabsender = h.versandabsender_for_channel(record.get("salesChannel"))
-			if not versandabsender and son:
+			# Fallback-Query nur, wenn die fremde Spalte überhaupt existiert - sonst crasht
+			# frappe.db.get_value mit "Unknown column" (Bugfix 2026-09-18, Nutzer-Fund).
+			if not versandabsender and son and h.versandabsender_app_installed():
 				versandabsender = frappe.db.get_value("Sales Order", son, "vi_versandabsender")
 			if versandabsender:
 				doc.vi_versandabsender = versandabsender

@@ -653,6 +653,13 @@ class WeClappSettings(Document):
 		known = {f"NET{i}" for i in range(1, 10)} | {f"GROSS{i}" for i in range(1, 9)}
 		channels = sorted(known | used, key=lambda c: (c[0] != "N", c))
 
+		# frappe.db.exists("Versandabsender", ...) würde gegen eine nicht vorhandene Tabelle
+		# laufen und abstürzen, wenn die separate "ERPNext Versand"-App (die diese Doctype
+		# anlegt) nicht installiert ist - deshalb einmal vorab prüfen, ob die Doctype SELBST
+		# existiert (frappe.db.exists("DocType", ...) fragt tabDocType ab, die immer da ist,
+		# also immer sicher). Bugfix 2026-09-18 (Nutzer-Fund).
+		versandabsender_available = bool(frappe.db.exists("DocType", "Versandabsender"))
+
 		by_channel = {row.sales_channel: row for row in self.price_list_mappings}
 		added = 0
 		for channel in channels:
@@ -664,7 +671,7 @@ class WeClappSettings(Document):
 				added += 1
 			row.prices_include_tax = 1 if is_gross else 0
 			self._sync_channel_price_list(row)
-			if not row.versandabsender:
+			if versandabsender_available and not row.versandabsender:
 				suggested = _CHANNEL_VERSANDABSENDER.get(channel)
 				if suggested and frappe.db.exists("Versandabsender", suggested):
 					row.versandabsender = suggested

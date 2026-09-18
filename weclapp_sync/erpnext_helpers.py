@@ -86,15 +86,30 @@ def territory_for_country(country: str | None) -> str | None:
 	return default
 
 
+def versandabsender_app_installed() -> bool:
+	"""Prüft, ob die fremde Doctype "Versandabsender" (aus der separaten "ERPNext Versand"-App)
+	überhaupt existiert - `frappe.db.exists("Versandabsender", ...)` würde sonst gegen eine nicht
+	vorhandene Tabelle (`tabVersandabsender`) laufen und mit einem DB-Fehler abbrechen statt
+	sauber `False`/`None` zu liefern. `frappe.db.exists("DocType", ...)` fragt dagegen `tabDocType`
+	ab, die IMMER existiert - dieser Check selbst ist also immer sicher.
+
+	Bugfix 2026-09-18 (Nutzer-Fund): ohne diese Prüfung hätte auf einer Installation ohne die
+	Versand-App der Preiskanal-Button (`populate_price_list_mappings`) mit einem Fehler
+	abgebrochen. Wird die App SPÄTER installiert, greift die Zuordnung ab dem nächsten Aufruf
+	automatisch - keine besondere Migrations-/Installationsreihenfolge nötig."""
+	return bool(frappe.db.exists("DocType", "Versandabsender"))
+
+
 def versandabsender_for_channel(sales_channel: str | None) -> str | None:
 	"""WeClapp `salesChannel` (z.B. "GROSS7" für Amazon) -> ERPNext `Versandabsender` (Marke),
 	über die Zuordnung in `WeClapp Settings.price_list_mappings` (Spalte `versandabsender`,
 	siehe `weclapp_settings.populate_price_list_mappings()`). Steuert bei der "ERPNext Versand"-
 	App (Custom Field `vi_versandabsender` auf Customer/Sales Order/Sales Invoice/Delivery Note,
 	fremde Doctype "Versandabsender") Kopfbogen und Absenderadresse auf Versandlabels.
-	Nutzer-Wunsch 2026-09-18. `None` bei fehlendem/nicht zugeordnetem Kanal - kein Rateversuch,
-	die andere App entscheidet dann selbst über ihren eigenen Default."""
-	if not sales_channel:
+	Nutzer-Wunsch 2026-09-18. `None` bei fehlendem/nicht zugeordnetem Kanal ODER wenn die
+	Versand-App gar nicht installiert ist (siehe `versandabsender_app_installed()`) - kein
+	Rateversuch, die andere App entscheidet dann selbst über ihren eigenen Default."""
+	if not sales_channel or not versandabsender_app_installed():
 		return None
 	for row in _settings().price_list_mappings:
 		if row.sales_channel == sales_channel:
