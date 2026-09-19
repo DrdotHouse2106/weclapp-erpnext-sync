@@ -69,6 +69,13 @@ def apply_item_tax_hint_client_scripts() -> None:
 		frappe.get_doc(
 			{
 				"doctype": "Client Script",
+				# Bugfix 2026-09-19 (Live-Fund): "Client Script" hat normalerweise Hash-Naming,
+				# auf dieser Instanz aber wurde `autoname` irgendwann (nicht durch weclapp_sync -
+				# siehe setup/naming.py, "Client Script" steht dort nicht in _PROMPT_DOCTYPES) auf
+				# "Prompt" umgestellt - ein .insert() ohne expliziten Namen wirft dann
+				# "Please set the document name". Ein selbst vergebener Hash-Name umgeht das
+				# unabhängig davon, welches Naming-Schema gerade konfiguriert ist.
+				"name": frappe.generate_hash(length=10),
 				"dt": parent_doctype,
 				"view": "Form",
 				"enabled": 1,
