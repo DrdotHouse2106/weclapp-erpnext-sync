@@ -392,6 +392,52 @@ class WeClappSettings(Document):
 		return msg
 
 	@frappe.whitelist()
+	def inspect_weclapp_entity(self, entity: str, field: str | None = None, limit: int = 3):
+		"""Read-only-Diagnose: Welche Felder liefert WeClapp für eine Entität wirklich?
+
+		Wiederkehrender Bedarf in diesem Projekt (Vertriebsweg/salesChannel, ledgerAccount-Typen,
+		Lagerbewegungsarten, Bestellstatus): Feld- und Enum-Namen stehen nirgends zuverlässig,
+		und raten hat hier schon mehrfach zu Fehlern geführt. Statt für jede Frage einen eigenen
+		Diagnose-Deploy zu bauen, einmal dieses Fenster.
+
+		Nur lesend: `client` erzwingt GET (nicht-GET -> WeClappWriteRefused, siehe
+		weclapp/client.py) - diese Methode kann strukturell nichts in WeClapp verändern.
+
+		Ohne `field`: Feldnamen + gekürzte Beispielwerte der ersten `limit` Datensätze.
+		Mit `field`: Häufigkeitsverteilung dieses Feldes über die ersten 20 Seiten (für Enums
+		wie `status`), damit man sieht, welche Werte real vorkommen."""
+		from weclapp_sync.sync.settings import get_client
+
+		client = get_client()
+		client.open()
+		try:
+			if field:
+				counts: dict[str, int] = {}
+				for page_no, page in enumerate(client.iter_pages(entity, sort="id"), start=1):
+					for row in page:
+						counts[str(row.get(field))] = counts.get(str(row.get(field)), 0) + 1
+					if page_no >= 20:
+						break
+				lines = [f"{c:6d}  {v}" for v, c in sorted(counts.items(), key=lambda kv: -kv[1])]
+				return f"{entity}.{field} – Verteilung über {sum(counts.values())} Datensätze:\n" + "\n".join(lines)
+
+			rows = []
+			for page in client.iter_pages(entity, sort="id"):
+				rows = page[: int(limit)]
+				break
+			if not rows:
+				return f"{entity}: keine Datensätze."
+			out = [f"{entity}: {len(rows)} Beispiel(e), Felder je Datensatz:"]
+			for i, row in enumerate(rows, start=1):
+				out.append(f"\n--- Datensatz {i} ---")
+				for k in sorted(row):
+					val = str(row[k])
+					out.append(f"  {k} = {val[:120]}{'…' if len(val) > 120 else ''}")
+			return "\n".join(out)
+		finally:
+			client.close()
+
+	@frappe.whitelist()
 	def refresh_object_type_list(self):
 		self.ensure_object_type_rows()
 		self.save()
