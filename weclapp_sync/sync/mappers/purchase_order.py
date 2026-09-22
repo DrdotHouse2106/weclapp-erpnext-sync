@@ -98,8 +98,16 @@ class PurchaseOrderMapper(TransactionMapper):
 		self.check_gross_total(doc, record, label="Bestellung")
 
 		# `submit_orders` statt `submit_documents` - siehe sales_order.py (GL-neutral, füllt die
-		# bestellte Menge für die Bedarfsplanung).
-		if settings.submit_orders and doc.docstatus == 0:
+		# bestellte Menge für die Bedarfsplanung). Und nur, wenn die Bestellung faktisch
+		# abgeschlossen ist (Eingangsrechnung vorhanden) - dieselbe Begründung wie bei
+		# `_is_closed_in_weclapp()` im Auftrags-Mapper: ein gebuchter Beleg wird vom Sync nie
+		# wieder aktualisiert. Hinweis: viele Eingangsrechnungen haben gar keine Bestellung
+		# (Abos, einmalige Kosten) - hier zählt nur die umgekehrte Richtung.
+		if (
+			settings.submit_orders
+			and doc.docstatus == 0
+			and frappe.db.exists("Purchase Invoice", {"wc_purchase_order": doc.name})
+		):
 			doc.submit()
 
 		attach_weclapp_documents(self.client, WeClappDocType.PURCHASE_ORDER, record.get("id"), "Purchase Order", doc.name)

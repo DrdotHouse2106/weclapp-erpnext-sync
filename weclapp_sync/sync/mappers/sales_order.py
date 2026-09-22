@@ -21,6 +21,30 @@ from weclapp_sync.sync.settings import get_settings
 from weclapp_sync.weclapp import WeClappDocType
 
 
+def _is_closed_in_weclapp(order_name: str) -> bool:
+	"""Ist der Auftrag in WeClapp faktisch abgeschlossen - also nicht mehr änderbar?
+
+	Kriterium (Nutzer-Vorgabe 2026-09-22): Sobald ein Auftrag eine Rechnung oder eine Lieferung
+	hat, wird er in WeClapp nicht mehr angefasst. Aufträge OHNE beides werden dort gelegentlich
+	noch nachbearbeitet - die dürfen wir hier nicht buchen, weil der Sync einen gebuchten Beleg
+	danach nie wieder aktualisiert (`docstatus == 1`-Abbruch in upsert()) und ERPNext ihn damit
+	auf dem heutigen Stand einfrieren würde.
+
+	Bewusst über die bereits gesyncte Belegkette (`wc_sales_order` an Rechnung/Lieferschein)
+	statt über ein WeClapp-Statusfeld: das Kriterium ist genau das, was der Nutzer beschrieben
+	hat, und braucht keine Annahme über WeClapps Status-Enum. Live-Verteilung zum Bauzeitpunkt:
+	3505 von 3598 Aufträgen abgeschlossen, 93 noch offen.
+
+	Grenzfall: Die Prüfung sieht nur Rechnungen/Lieferungen, die bereits in ERPNext stehen. In
+	SYNC_ORDER laufen die NACH dem Auftrag - ein Auftrag, der erst in diesem Lauf seine erste
+	Rechnung bekommt, wird also erst beim nächsten Lauf gebucht. Unkritisch (idempotent, holt
+	sich selbst ein), aber erklärt, warum ein einzelner Lauf nie ganz "fertig" wirkt."""
+	return bool(
+		frappe.db.exists("Sales Invoice", {"wc_sales_order": order_name})
+		or frappe.db.exists("Delivery Note", {"wc_sales_order": order_name})
+	)
+
+
 class SalesOrderMapper(TransactionMapper):
 	target_doctype = "Sales Order"
 	items_field = "orderItems"
@@ -124,7 +148,8 @@ class SalesOrderMapper(TransactionMapper):
 		# Bedarfsplanung - die lesen ausschließlich aus den Ledger-Tabellen und sehen Entwürfe
 		# nicht (live geprüft: 0 GL Entries, 0 Stock Ledger Entries bei 5346 Entwurfsrechnungen).
 		# Rechnungen hängen weiter an `submit_documents`, weil sie echt ins Hauptbuch buchen.
-		if settings.submit_orders and doc.docstatus == 0:
+		# Zusätzlich nur abgeschlossene Aufträge - siehe _is_closed_in_weclapp().
+		if settings.submit_orders and doc.docstatus == 0 and _is_closed_in_weclapp(doc.name):
 			doc.submit()
 
 		attach_weclapp_documents(self.client, WeClappDocType.SALES_ORDER, record.get("id"), "Sales Order", doc.name)

@@ -83,8 +83,17 @@ class QuotationMapper(TransactionMapper):
 
 		self.check_gross_total(doc, record, label="Angebot")
 
-		# `submit_orders` statt `submit_documents` - siehe sales_order.py (GL-neutral).
-		if settings.submit_orders and doc.docstatus == 0:
+		# `submit_orders` statt `submit_documents` - siehe sales_order.py (GL-neutral), und nur
+		# bei Angeboten, aus denen schon ein Auftrag wurde (dann ändert WeClapp sie nicht mehr).
+		# ACHTUNG: greift derzeit nie, weil die Verknüpfung Angebot->Auftrag live leer ist -
+		# Altbestand heißt noch "AN-<nr>", `sales_order.py` sucht aber nach "<nr>" (Namens-
+		# umstellung aus Increment 13 wurde nie nachgezogen). Angebote bleiben deshalb vorerst
+		# Entwurf; das ist die sichere Richtung, aber kein Dauerzustand - siehe CLAUDE.md.
+		if (
+			settings.submit_orders
+			and doc.docstatus == 0
+			and frappe.db.exists("Sales Order", {"wc_quotation": doc.name})
+		):
 			doc.submit()
 
 		attach_weclapp_documents(self.client, WeClappDocType.QUOTATION, record.get("id"), "Quotation", doc.name)
