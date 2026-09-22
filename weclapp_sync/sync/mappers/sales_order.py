@@ -119,7 +119,12 @@ class SalesOrderMapper(TransactionMapper):
 
 		self.check_gross_total(doc, record, label="Auftrag")
 
-		if settings.submit_documents and doc.docstatus == 0:
+		# `submit_orders`, nicht `submit_documents` (Trennung 2026-09-22): ein gebuchter Auftrag
+		# erzeugt in ERPNext weder GL- noch Lagerbuchung, füllt aber Verkaufsstatistik und
+		# Bedarfsplanung - die lesen ausschließlich aus den Ledger-Tabellen und sehen Entwürfe
+		# nicht (live geprüft: 0 GL Entries, 0 Stock Ledger Entries bei 5346 Entwurfsrechnungen).
+		# Rechnungen hängen weiter an `submit_documents`, weil sie echt ins Hauptbuch buchen.
+		if settings.submit_orders and doc.docstatus == 0:
 			doc.submit()
 
 		attach_weclapp_documents(self.client, WeClappDocType.SALES_ORDER, record.get("id"), "Sales Order", doc.name)

@@ -83,7 +83,8 @@ class QuotationMapper(TransactionMapper):
 
 		self.check_gross_total(doc, record, label="Angebot")
 
-		if settings.submit_documents and doc.docstatus == 0:
+		# `submit_orders` statt `submit_documents` - siehe sales_order.py (GL-neutral).
+		if settings.submit_orders and doc.docstatus == 0:
 			doc.submit()
 
 		attach_weclapp_documents(self.client, WeClappDocType.QUOTATION, record.get("id"), "Quotation", doc.name)

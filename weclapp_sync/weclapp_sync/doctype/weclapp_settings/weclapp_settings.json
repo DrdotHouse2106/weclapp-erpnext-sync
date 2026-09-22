@@ -62,6 +62,7 @@
   "ledger_account_numbers",
   "create_missing_ledger_accounts",
   "section_tax",
+  "submit_orders",
   "submit_documents",
   "default_income_account",
   "default_expense_account",
@@ -416,10 +417,17 @@
   },
   {
    "default": "0",
-   "description": "Wenn aktiv, werden migrierte Belege (Angebot/Auftrag/Rechnung/...) direkt gebucht (submitted) statt als Entwurf.",
+   "description": "Bucht Angebote, Aufträge und Bestellungen (submitted statt Entwurf). Diese Belegarten erzeugen in ERPNext WEDER Buchungen im Hauptbuch NOCH Lagerbewegungen - sie füllen aber die Verkaufs-/Einkaufsstatistik und die Bedarfsplanung (reservierte bzw. bestellte Menge), die aus Entwürfen keine Daten ziehen. Deshalb unabhängig vom Rechnungs-Schalter darunter schaltbar.",
+   "fieldname": "submit_orders",
+   "fieldtype": "Check",
+   "label": "Angebote/Aufträge/Bestellungen buchen (ohne Finanzwirkung)"
+  },
+  {
+   "default": "0",
+   "description": "Bucht Ausgangs- und Eingangsrechnungen. ACHTUNG: erzeugt echte Buchungen im Hauptbuch (Umsatz, Steuer, Debitoren/Kreditoren). Erst einschalten, wenn ERPNext die Buchhaltung wirklich übernimmt - vorher braucht es Eröffnungsbilanz und Zahlungsabgleich, sonst laufen die Salden auseinander. Lieferscheine und Lagerbewegungen bleiben unabhängig davon immer Entwurf.",
    "fieldname": "submit_documents",
    "fieldtype": "Check",
-   "label": "Belege buchen (submit)"
+   "label": "Rechnungen buchen (Finanzwirkung!)"
   },
   {
    "description": "Fallback-Erlöskonto, wenn im Steuer-Mapping keins gesetzt ist.",

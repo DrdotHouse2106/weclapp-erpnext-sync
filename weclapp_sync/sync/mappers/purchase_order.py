@@ -97,7 +97,9 @@ class PurchaseOrderMapper(TransactionMapper):
 
 		self.check_gross_total(doc, record, label="Bestellung")
 
-		if settings.submit_documents and doc.docstatus == 0:
+		# `submit_orders` statt `submit_documents` - siehe sales_order.py (GL-neutral, füllt die
+		# bestellte Menge für die Bedarfsplanung).
+		if settings.submit_orders and doc.docstatus == 0:
 			doc.submit()
 
 		attach_weclapp_documents(self.client, WeClappDocType.PURCHASE_ORDER, record.get("id"), "Purchase Order", doc.name)
